@@ -578,16 +578,33 @@ export default function Home() {
         day: "numeric",
         year: "numeric",
       });
-    var text =
-      previewFormat === "html"
-        ? generateNewsletterHTML(title, selectedList)
-        : generatePlainText(title, selectedList);
-    navigator.clipboard.writeText(text).then(function () {
-      setCopied(true);
-      setTimeout(function () {
-        setCopied(false);
-      }, 2000);
-    });
+    var html = generateNewsletterHTML(title, selectedList);
+    var plain = generatePlainText(title, selectedList);
+
+    if (previewFormat === "html") {
+      // Copy as RICH TEXT so Substack renders it formatted
+      var blob = new Blob([html], { type: "text/html" });
+      var blobPlain = new Blob([plain], { type: "text/plain" });
+      var item = new ClipboardItem({
+        "text/html": blob,
+        "text/plain": blobPlain,
+      });
+      navigator.clipboard.write([item]).then(function () {
+        setCopied(true);
+        setTimeout(function () { setCopied(false); }, 2000);
+      }).catch(function () {
+        // Fallback if ClipboardItem not supported
+        navigator.clipboard.writeText(html).then(function () {
+          setCopied(true);
+          setTimeout(function () { setCopied(false); }, 2000);
+        });
+      });
+    } else {
+      navigator.clipboard.writeText(plain).then(function () {
+        setCopied(true);
+        setTimeout(function () { setCopied(false); }, 2000);
+      });
+    }
   }
 
   return (
@@ -1231,17 +1248,20 @@ export default function Home() {
                       marginBottom: 4,
                     }}
                   >
-                    Every link is the real original URL
+                    How to use with Substack
                   </div>
                   <div
                     style={{
                       color: "#6b7280",
                       fontSize: 12,
-                      lineHeight: 1.5,
+                      lineHeight: 1.8,
                     }}
                   >
-                    Copy &rarr; Paste into Substack &rarr; Publish. All links
-                    go directly to the original source.
+                    <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Click "Copy to Clipboard" above<br/>
+                    <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Go to Substack &rarr; New Post<br/>
+                    <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Click inside the editor and press Ctrl+V (or Cmd+V)<br/>
+                    <strong style={{ color: "#9ca3af" }}>Step 4:</strong> The headlines, links, and descriptions paste in formatted. Add a subject line and hit Publish.<br/>
+                    All links go directly to the original source.
                   </div>
                 </div>
               </>
