@@ -10,8 +10,13 @@ const CATEGORY_COLORS = {
   Community: { bg: "#1a3d0c", text: "#a3e635" },
   Lifestyle: { bg: "#3d1a0c", text: "#fb923c" },
   "Mental Game": { bg: "#0c3d3d", text: "#2dd4bf" },
-  Tips: { bg: "#0c1a3d", text: "#60a5fa" },
+  Instruction: { bg: "#0c1a3d", text: "#60a5fa" },
   "Senior Golf": { bg: "#3d3d0c", text: "#facc15" },
+  "European Tour": { bg: "#1a0c3d", text: "#a78bfa" },
+  Travel: { bg: "#3d0c1a", text: "#fb7185" },
+  Fashion: { bg: "#2e3d0c", text: "#bef264" },
+  Magazine: { bg: "#0c2e2e", text: "#5eead4" },
+  Betting: { bg: "#3d2e1a", text: "#fdba74" },
 };
 
 function formatDate(dateStr) {
@@ -121,6 +126,48 @@ function Tab({ active, onClick, children, count }) {
           {count}
         </span>
       )}
+    </button>
+  );
+}
+
+function CopyButton({ url }) {
+  const [copied, setCopied] = useState(false);
+  function handleCopy(e) {
+    e.stopPropagation();
+    navigator.clipboard.writeText(url).then(function () {
+      setCopied(true);
+      setTimeout(function () { setCopied(false); }, 1500);
+    });
+  }
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy URL"}
+      style={{
+        background: copied ? "rgba(74,222,128,0.15)" : "rgba(255,255,255,0.05)",
+        border: copied ? "1px solid rgba(74,222,128,0.3)" : "1px solid rgba(255,255,255,0.1)",
+        borderRadius: 4,
+        padding: "2px 5px",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 3,
+        flexShrink: 0,
+        transition: "all 0.15s",
+      }}
+    >
+      {copied ? (
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+          <path d="M2.5 6L5 8.5L9.5 3.5" stroke="#4ade80" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+      ) : (
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="#9ca3af">
+          <path d="M4 2a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6zM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2z"/>
+        </svg>
+      )}
+      <span style={{ fontSize: 9, color: copied ? "#4ade80" : "#6b7280", fontWeight: 600 }}>
+        {copied ? "Copied" : "Copy"}
+      </span>
     </button>
   );
 }
@@ -240,7 +287,11 @@ function ArticleCard({ article, selected, onToggle }) {
           <svg width="10" height="10" viewBox="0 0 16 16" fill="#4ade80">
             <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9.874a2 2 0 0 1-1.874 2H5a2 2 0 1 1 0-4h1.354zM9.646 10.5H12a3 3 0 1 0 0-6H9a3 3 0 0 0-2.83 4h1.016A2 2 0 0 1 9 6.5h3a2 2 0 1 1 0 4h-1.354z" />
           </svg>
-          <span
+          <a
+            href={article.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={function (e) { e.stopPropagation(); }}
             style={{
               color: "#4ade80",
               fontSize: 10,
@@ -249,12 +300,13 @@ function ArticleCard({ article, selected, onToggle }) {
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
-              maxWidth: 400,
+              maxWidth: 370,
+              textDecoration: "none",
             }}
           >
-            {domain}
-            {urlPath}
-          </span>
+            {domain}{urlPath}
+          </a>
+          <CopyButton url={article.link} />
         </div>
       </div>
     </div>
