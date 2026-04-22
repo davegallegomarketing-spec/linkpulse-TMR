@@ -172,7 +172,7 @@ function CopyButton({ url }) {
   );
 }
 
-function ArticleCard({ article, selected, onToggle }) {
+function ArticleCard({ article, selected, onToggle, isSent }) {
   var catColor = CATEGORY_COLORS[article.feedCategory] || {
     bg: "#1f2937",
     text: "#9ca3af",
@@ -196,15 +196,20 @@ function ArticleCard({ article, selected, onToggle }) {
         padding: "14px 16px",
         background: selected
           ? "rgba(21,128,61,0.08)"
+          : isSent
+          ? "rgba(251,146,60,0.03)"
           : "rgba(255,255,255,0.015)",
         borderRadius: 10,
         cursor: "pointer",
         border: selected
           ? "1px solid rgba(21,128,61,0.35)"
+          : isSent
+          ? "1px solid rgba(251,146,60,0.15)"
           : "1px solid rgba(255,255,255,0.05)",
         transition: "all 0.12s",
         alignItems: "flex-start",
         animation: "fadeIn 0.3s ease",
+        opacity: isSent && !selected ? 0.55 : 1,
       }}
     >
       <div
@@ -261,6 +266,20 @@ function ArticleCard({ article, selected, onToggle }) {
           <span style={{ color: "#6b7280", fontSize: 11 }}>
             {formatDate(article.pubDate)}
           </span>
+          {isSent && (
+            <span style={{
+              background: "rgba(251,146,60,0.15)",
+              color: "#fb923c",
+              padding: "1px 7px",
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.3px",
+            }}>
+              Published
+            </span>
+          )}
         </div>
         <div
           style={{
@@ -506,6 +525,41 @@ export default function Home() {
   const [previewFormat, setPreviewFormat] = useState("html");
   const [filterCategory, setFilterCategory] = useState("All");
   const [fetchMeta, setFetchMeta] = useState(null);
+  const [sentUrls, setSentUrls] = useState({});
+  const [hidePublished, setHidePublished] = useState(false);
+
+  // Load sent URLs from localStorage on mount
+  useEffect(function () {
+    try {
+      var saved = localStorage.getItem("linkpulse-sent");
+      if (saved) setSentUrls(JSON.parse(saved));
+    } catch (e) {}
+  }, []);
+
+  // Save sent URLs to localStorage whenever they change
+  useEffect(function () {
+    try {
+      localStorage.setItem("linkpulse-sent", JSON.stringify(sentUrls));
+    } catch (e) {}
+  }, [sentUrls]);
+
+  function markAsSent(articleList) {
+    var updated = Object.assign({}, sentUrls);
+    articleList.forEach(function (a) {
+      updated[a.link] = {
+        title: a.title,
+        sentAt: new Date().toISOString(),
+        feedName: a.feedName,
+      };
+    });
+    setSentUrls(updated);
+  }
+
+  function clearHistory() {
+    if (window.confirm("Clear all publish history? This cannot be undone.")) {
+      setSentUrls({});
+    }
+  }
 
   var loadFeeds = useCallback(async function () {
     setLoading(true);
@@ -581,29 +635,24 @@ export default function Home() {
     var html = generateNewsletterHTML(title, selectedList);
     var plain = generatePlainText(title, selectedList);
 
+    function onCopySuccess() {
+      markAsSent(selectedList);
+      setCopied(true);
+      setTimeout(function () { setCopied(false); }, 2000);
+    }
+
     if (previewFormat === "html") {
-      // Copy as RICH TEXT so Substack renders it formatted
       var blob = new Blob([html], { type: "text/html" });
       var blobPlain = new Blob([plain], { type: "text/plain" });
       var item = new ClipboardItem({
         "text/html": blob,
         "text/plain": blobPlain,
       });
-      navigator.clipboard.write([item]).then(function () {
-        setCopied(true);
-        setTimeout(function () { setCopied(false); }, 2000);
-      }).catch(function () {
-        // Fallback if ClipboardItem not supported
-        navigator.clipboard.writeText(html).then(function () {
-          setCopied(true);
-          setTimeout(function () { setCopied(false); }, 2000);
-        });
+      navigator.clipboard.write([item]).then(onCopySuccess).catch(function () {
+        navigator.clipboard.writeText(html).then(onCopySuccess);
       });
     } else {
-      navigator.clipboard.writeText(plain).then(function () {
-        setCopied(true);
-        setTimeout(function () { setCopied(false); }, 2000);
-      });
+      navigator.clipboard.writeText(plain).then(onCopySuccess);
     }
   }
 
@@ -916,6 +965,45 @@ export default function Home() {
                   </button>
                 </div>
               </div>
+              {Object.keys(sentUrls).length > 0 && (
+                <div style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  marginBottom: 12, padding: "8px 12px",
+                  background: "rgba(251,146,60,0.06)", borderRadius: 8,
+                  border: "1px solid rgba(251,146,60,0.12)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div
+                      onClick={function () { setHidePublished(!hidePublished); }}
+                      style={{
+                        width: 36, height: 20, borderRadius: 10,
+                        background: hidePublished ? "#fb923c" : "#374151",
+                        position: "relative", cursor: "pointer", transition: "all 0.2s",
+                      }}
+                    >
+                      <div style={{
+                        width: 16, height: 16, borderRadius: "50%", background: "#fff",
+                        position: "absolute", top: 2,
+                        left: hidePublished ? 18 : 2, transition: "all 0.2s",
+                      }} />
+                    </div>
+                    <span style={{ color: "#fb923c", fontSize: 11, fontWeight: 600 }}>
+                      Hide published ({Object.keys(sentUrls).length} articles sent)
+                    </span>
+                  </div>
+                  <button
+                    onClick={clearHistory}
+                    style={{
+                      padding: "4px 10px", borderRadius: 4,
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      background: "transparent", color: "#6b7280",
+                      fontSize: 10, fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    Clear history
+                  </button>
+                </div>
+              )}
             )}
 
             {articles.length === 0 && !error ? (
@@ -943,13 +1031,16 @@ export default function Home() {
               </div>
             ) : (
               <div style={{ display: "grid", gap: 6 }}>
-                {filteredArticles.map(function (article) {
+                {filteredArticles
+                  .filter(function (a) { return !hidePublished || !sentUrls[a.link]; })
+                  .map(function (article) {
                   var idx = articles.indexOf(article);
                   return (
                     <ArticleCard
                       key={idx}
                       article={article}
                       selected={selectedArticles.has(idx)}
+                      isSent={!!sentUrls[article.link]}
                       onToggle={function () {
                         toggleArticle(idx);
                       }}
