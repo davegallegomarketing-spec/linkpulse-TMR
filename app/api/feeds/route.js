@@ -20,8 +20,6 @@ const GOLF_FEEDS = [
   { name: "Golf Channel", url: "https://www.golfchannel.com/rss", category: "Tour News" },
   { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News" },
   { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News" },
-  { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
-  { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12040", category: "Tour News" },
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News" },
 
   // === EQUIPMENT ===
