@@ -734,6 +734,7 @@ export default function Home() {
   const [previewFormat, setPreviewFormat] = useState("html");
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterTime, setFilterTime] = useState("all");
+  const [imagesOnly, setImagesOnly] = useState(false);
   const [fetchMeta, setFetchMeta] = useState(null);
   const [sentUrls, setSentUrls] = useState({});
   const [hidePublished, setHidePublished] = useState(false);
@@ -864,6 +865,14 @@ export default function Home() {
       return sb - sa;
     });
   }
+
+  // Apply images-only filter
+  if (imagesOnly) {
+    filteredArticles = filteredArticles.filter(function (a) { return !!a.image; });
+  }
+
+  var countWithImages = articles.filter(function (a) { return !!a.image; }).length;
+
   var selectedList = articles.filter(function (_, i) {
     return selectedArticles.has(i);
   });
@@ -1178,6 +1187,30 @@ export default function Home() {
                       </button>
                     );
                   })}
+                  <button
+                    onClick={function () { setImagesOnly(!imagesOnly); }}
+                    style={{
+                      padding: "5px 12px",
+                      borderRadius: 6,
+                      border: imagesOnly ? "1px solid rgba(34,197,94,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                      background: imagesOnly ? "rgba(21,128,61,0.2)" : "transparent",
+                      color: imagesOnly ? "#4ade80" : "#6b7280",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    {"\uD83D\uDDBC\uFE0F"} Images
+                    <span style={{
+                      background: imagesOnly ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.08)",
+                      padding: "0 5px",
+                      borderRadius: 8,
+                      fontSize: 9,
+                    }}>{countWithImages}</span>
+                  </button>
                   <span style={{ marginLeft: "auto", color: "#4b5563", fontSize: 10 }}>
                     {fetchMeta ? "Updated " + formatDate(fetchMeta.fetchedAt) : ""}
                   </span>
