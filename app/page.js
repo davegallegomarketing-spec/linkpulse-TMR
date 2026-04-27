@@ -194,12 +194,12 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
   // Build label array (can show multiple)
   var labels = [];
 
-  // Trending/breaking labels from score
-  if (trendScore && trendScore.score >= 8) {
+  // Trending/breaking labels from score (strict thresholds)
+  if (trendScore && trendScore.score >= 12) {
     labels.push({ text: "BREAKING", bg: "#dc2626", color: "#fff", glow: "0 0 10px rgba(220,38,38,0.5)" });
-  } else if (trendScore && trendScore.score >= 5) {
+  } else if (trendScore && trendScore.score >= 7) {
     labels.push({ text: "TRENDING", bg: "#7c3aed", color: "#fff", glow: "0 0 8px rgba(124,58,237,0.4)" });
-  } else if (trendScore && trendScore.score >= 3) {
+  } else if (trendScore && trendScore.score >= 4) {
     labels.push({ text: "BUZZ", bg: "#0369a1", color: "#fff", glow: "none" });
   }
 
@@ -591,117 +591,102 @@ function CostCalculator() {
 function detectTrending(articles) {
   if (!articles || articles.length === 0) return {};
 
-  // Breaking/hot keywords and their weights
+  // Only strong breaking keywords (removed weak ones like "cup", "open", "lead")
   var breakingWords = {
-    "wins": 3, "won": 3, "victory": 3, "champion": 3,
-    "breaks": 4, "record": 3, "breaking": 4, "broken": 3,
-    "injury": 3, "injured": 3, "withdraws": 4, "withdrawn": 4, "WD": 4,
-    "suspended": 4, "banned": 4, "disqualified": 4, "DQ": 4,
-    "trade": 3, "deal": 3, "signs": 3, "contract": 3,
+    "wins": 2, "won": 2, "victory": 2, "champion": 2,
+    "breaks record": 4, "new record": 4,
+    "injury": 3, "injured": 3, "withdraws": 4, "withdrawn": 4,
+    "suspended": 4, "banned": 4, "disqualified": 4,
     "fired": 4, "resigns": 4, "retires": 4, "retirement": 4,
-    "merger": 3, "lawsuit": 3, "investigation": 3,
-    "ace": 3, "hole-in-one": 3, "albatross": 4, "59": 4, "63": 2, "62": 3,
-    "major": 2, "masters": 2, "open": 1, "PGA": 1, "ryder": 3, "cup": 1,
-    "lead": 2, "leads": 2, "leader": 2, "leaderboard": 2,
-    "playoff": 3, "sudden": 2, "eagle": 1,
-    "controversial": 3, "controversy": 3, "protest": 3,
-    "LIV": 2, "PIF": 2, "Saudi": 2,
-    "Tiger": 2, "Woods": 2, "Scheffler": 2, "McIlroy": 2, "Rory": 2,
-    "Rahm": 2, "Koepka": 2, "Mickelson": 2, "Spieth": 2, "Korda": 2,
+    "ace": 2, "hole-in-one": 3, "albatross": 4, "shoots 59": 5,
+    "playoff": 2, "sudden death": 3,
+    "controversial": 2, "controversy": 2,
   };
 
-  // Major sources get a credibility boost
+  // Major golf sources get a small boost
   var majorSources = {
-    "Golf.com": 2, "ESPN Golf": 3, "BBC Golf": 3, "Sky Sports Golf": 2,
-    "Golf Digest": 2, "Golf Channel": 2, "PGA Tour": 3, "GolfWRX": 1,
+    "Golf.com": 1, "BBC Golf": 2, "Golf Digest": 1, "PGA Tour": 2, "GolfWRX": 1,
   };
 
-  // Step 1: Extract key topics from all headlines
-  var topicCounts = {};
+  // Step 1: Extract proper names (2+ word names) from headlines for topic matching
+  var topicMap = {};
   articles.forEach(function (a) {
-    var words = a.title.toLowerCase().replace(/[^a-z0-9\s'-]/g, "").split(/\s+/);
-    // Extract 2-word phrases (bigrams) for topic detection
-    for (var i = 0; i < words.length - 1; i++) {
-      var bigram = words[i] + " " + words[i + 1];
-      // Filter out common filler bigrams
-      var fillers = ["the ", "a ", "an ", "in ", "at ", "of ", "to ", "for ", "is ", "on ", "it ", "and ", "or ", "with ", "has ", "this ", "that "];
-      var isFiller = false;
-      fillers.forEach(function (f) { if (bigram.indexOf(f) === 0) isFiller = true; });
-      if (!isFiller && bigram.length > 5) {
-        if (!topicCounts[bigram]) topicCounts[bigram] = [];
-        topicCounts[bigram].push(a.feedName);
-      }
+    // Only extract multi-word proper nouns (player names, tournament names)
+    var namePattern = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/g;
+    var match;
+    while ((match = namePattern.exec(a.title)) !== null) {
+      var name = match[1];
+      // Skip very short or very generic names
+      if (name.length < 6) continue;
+      // Skip common non-golf phrases
+      var skipPhrases = ["World Cup", "Premier League", "Champions League", "Red Card", "The Open"];
+      var shouldSkip = false;
+      skipPhrases.forEach(function (s) { if (name === s) shouldSkip = true; });
+      if (shouldSkip) continue;
+
+      var key = name.toLowerCase();
+      if (!topicMap[key]) topicMap[key] = { name: name, sources: new Set(), count: 0 };
+      topicMap[key].sources.add(a.feedName);
+      topicMap[key].count++;
     }
-    // Also track proper nouns (capitalized words in original title)
-    var origWords = a.title.split(/\s+/);
-    origWords.forEach(function (w) {
-      var clean = w.replace(/[^a-zA-Z'-]/g, "");
-      if (clean.length > 2 && clean[0] === clean[0].toUpperCase() && clean[0] !== clean[0].toLowerCase()) {
-        var lc = clean.toLowerCase();
-        if (!topicCounts[lc]) topicCounts[lc] = [];
-        topicCounts[lc].push(a.feedName);
-      }
-    });
   });
 
-  // Step 2: Find topics covered by multiple sources (cross-source = trending)
+  // Step 2: Find topics covered by 3+ different sources (strict threshold)
   var trendingTopics = {};
-  Object.keys(topicCounts).forEach(function (topic) {
-    var uniqueSources = Array.from(new Set(topicCounts[topic]));
-    if (uniqueSources.length >= 2) {
-      trendingTopics[topic] = uniqueSources.length;
+  Object.keys(topicMap).forEach(function (topic) {
+    var info = topicMap[topic];
+    if (info.sources.size >= 3) {
+      trendingTopics[topic] = { sourceCount: info.sources.size, name: info.name };
     }
   });
 
   // Step 3: Score each article
   var scores = {};
-  articles.forEach(function (a, idx) {
+  articles.forEach(function (a) {
     var score = 0;
     var reasons = [];
     var titleLower = a.title.toLowerCase();
     var ageHours = (Date.now() - new Date(a.pubDate).getTime()) / 3600000;
 
+    // Skip articles older than 72 hours
+    if (ageHours > 72) return;
+
     // Keyword scoring
-    Object.keys(breakingWords).forEach(function (word) {
-      if (titleLower.indexOf(word.toLowerCase()) !== -1) {
-        score += breakingWords[word];
-        if (breakingWords[word] >= 3 && reasons.length < 2) {
-          reasons.push(word);
-        }
+    Object.keys(breakingWords).forEach(function (phrase) {
+      if (titleLower.indexOf(phrase.toLowerCase()) !== -1) {
+        score += breakingWords[phrase];
       }
     });
 
-    // Cross-source trending (biggest signal)
+    // Cross-source trending (only with strict name matching)
     Object.keys(trendingTopics).forEach(function (topic) {
       if (titleLower.indexOf(topic) !== -1) {
-        var sourceCount = trendingTopics[topic];
-        score += sourceCount * 2;
-        if (sourceCount >= 3 && reasons.indexOf(sourceCount + " sources") === -1) {
-          reasons.push(sourceCount + " sources");
-        }
+        var info = trendingTopics[topic];
+        score += info.sourceCount * 2;
+        reasons.push(info.sourceCount + " sources on " + info.name);
       }
     });
 
-    // Major source boost
+    // Small major source boost
     if (majorSources[a.feedName]) {
       score += majorSources[a.feedName];
     }
 
-    // Recency multiplier
-    if (ageHours < 2) score *= 2.0;
-    else if (ageHours < 6) score *= 1.5;
-    else if (ageHours < 12) score *= 1.2;
-    else if (ageHours > 48) score *= 0.5;
-    else if (ageHours > 72) score *= 0.3;
+    // Recency multiplier (aggressive decay)
+    if (ageHours < 2) score *= 1.8;
+    else if (ageHours < 6) score *= 1.3;
+    else if (ageHours < 12) score *= 1.0;
+    else if (ageHours < 24) score *= 0.7;
+    else score *= 0.4;
 
     score = Math.round(score * 10) / 10;
 
-    if (score > 0) {
-      var reason = "";
-      if (reasons.length > 0) {
-        reason = reasons.slice(0, 2).join(" \u00B7 ");
-      }
-      scores[a.link] = { score: score, reason: reason };
+    // Only tag if score is meaningful (raised thresholds)
+    if (score >= 4) {
+      scores[a.link] = {
+        score: score,
+        reason: reasons.length > 0 ? reasons[0] : "",
+      };
     }
   });
 
@@ -823,14 +808,14 @@ export default function Home() {
   var countNew = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
   var countHot = articles.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
   var countToday = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
-  var countTrending = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 3; }).length;
-  var countBreaking = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 8; }).length;
+  var countTrending = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).length;
+  var countBreaking = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }).length;
 
   // Apply trending filter
   if (filterTime === "trending") {
     filteredArticles = filteredArticles.filter(function (a) {
       var ts = trendScores[a.link];
-      return ts && ts.score >= 3;
+      return ts && ts.score >= 4;
     });
     filteredArticles.sort(function (a, b) {
       var sa = (trendScores[a.link] || { score: 0 }).score;
@@ -840,7 +825,7 @@ export default function Home() {
   } else if (filterTime === "breaking") {
     filteredArticles = filteredArticles.filter(function (a) {
       var ts = trendScores[a.link];
-      return ts && ts.score >= 8;
+      return ts && ts.score >= 12;
     });
     filteredArticles.sort(function (a, b) {
       var sa = (trendScores[a.link] || { score: 0 }).score;
