@@ -836,12 +836,17 @@ export default function Home() {
     });
   }
 
-  // Count articles by freshness
-  var countNew = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
-  var countHot = articles.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
-  var countToday = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
-  var countTrending = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).length;
-  var countBreaking = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }).length;
+  // Base articles for counting (respects category filter)
+  var countBase = filterCategory === "All"
+    ? articles
+    : articles.filter(function (a) { return a.feedCategory === filterCategory; });
+
+  // Count articles by freshness (based on current category)
+  var countNew = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
+  var countHot = countBase.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
+  var countToday = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
+  var countTrending = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).length;
+  var countBreaking = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }).length;
 
   // Apply trending filter
   if (filterTime === "trending") {
@@ -871,7 +876,7 @@ export default function Home() {
     filteredArticles = filteredArticles.filter(function (a) { return !!a.image; });
   }
 
-  var countWithImages = articles.filter(function (a) { return !!a.image; }).length;
+  var countWithImages = countBase.filter(function (a) { return !!a.image; }).length;
 
   var selectedList = articles.filter(function (_, i) {
     return selectedArticles.has(i);
@@ -1148,7 +1153,7 @@ export default function Home() {
                   marginBottom: 10, flexWrap: "wrap",
                 }}>
                   {[
-                    { id: "all", label: "All Time", count: articles.length },
+                    { id: "all", label: "All Time", count: countBase.length },
                     { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", color: "#fff" },
                     { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", color: "#fff" },
                     { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", color: "#fff" },
