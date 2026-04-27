@@ -6,6 +6,13 @@ const parser = new Parser({
     "User-Agent": "LinkPulse Golf/1.0 (RSS Aggregator)",
     Accept: "application/rss+xml, application/xml, text/xml, */*",
   },
+  customFields: {
+    item: [
+      ["media:content", "media:content"],
+      ["media:thumbnail", "media:thumbnail"],
+      ["content:encoded", "content:encoded"],
+    ],
+  },
 });
 
 const GOLF_FEEDS = [
@@ -78,14 +85,52 @@ export async function GET() {
     GOLF_FEEDS.map(async (feed) => {
       try {
         const parsed = await parser.parseURL(feed.url);
-        return (parsed.items || []).slice(0, 15).map((item) => ({
-          title: item.title || "Untitled",
-          link: item.link || item.guid || "#",
-          description: (item.contentSnippet || item.content || "").slice(0, 300),
-          pubDate: item.pubDate || item.isoDate || "",
-          feedName: feed.name,
-          feedCategory: feed.category,
-        }));
+        return (parsed.items || []).slice(0, 15).map((item) => {
+          // Extract image from every possible RSS field
+          var image = null;
+
+          // 1. Media content (most common for news feeds)
+          if (item["media:content"] && item["media:content"]["$"] && item["media:content"]["$"].url) {
+            image = item["media:content"]["$"].url;
+          }
+          // 2. Media thumbnail
+          if (!image && item["media:thumbnail"] && item["media:thumbnail"]["$"] && item["media:thumbnail"]["$"].url) {
+            image = item["media:thumbnail"]["$"].url;
+          }
+          // 3. Enclosure (podcast/media style)
+          if (!image && item.enclosure && item.enclosure.url) {
+            image = item.enclosure.url;
+          }
+          // 4. itunes image
+          if (!image && item["itunes"] && item["itunes"]["image"]) {
+            image = item["itunes"]["image"];
+          }
+          // 5. Extract from content HTML (img tag)
+          if (!image && item.content) {
+            var imgMatch = item.content.match(/<img[^>]+src=["']([^"']+)/);
+            if (imgMatch) image = imgMatch[1];
+          }
+          // 6. Extract from content:encoded
+          if (!image && item["content:encoded"]) {
+            var imgMatch2 = item["content:encoded"].match(/<img[^>]+src=["']([^"']+)/);
+            if (imgMatch2) image = imgMatch2[1];
+          }
+          // 7. Extract from description HTML
+          if (!image && item.description) {
+            var imgMatch3 = item.description.match(/<img[^>]+src=["']([^"']+)/);
+            if (imgMatch3) image = imgMatch3[1];
+          }
+
+          return {
+            title: item.title || "Untitled",
+            link: item.link || item.guid || "#",
+            description: (item.contentSnippet || item.content || "").slice(0, 300),
+            pubDate: item.pubDate || item.isoDate || "",
+            feedName: feed.name,
+            feedCategory: feed.category,
+            image: image,
+          };
+        });
       } catch (err) {
         return { error: feed.name, message: err.message };
       }
