@@ -9,7 +9,7 @@ const parser = new Parser({
 });
 
 const GOLF_FEEDS = [
-  // === TOUR NEWS ===
+  // === TOUR NEWS (high frequency) ===
   { name: "Golf.com", url: "https://golf.com/feed/", category: "Tour News" },
   { name: "Golf365", url: "https://golf365.com/feed/", category: "Tour News" },
   { name: "National Club Golfer", url: "https://nationalclubgolfer.com/feed/", category: "Tour News" },
@@ -17,6 +17,12 @@ const GOLF_FEEDS = [
   { name: "Irish Golf Desk", url: "https://irishgolfdesk.com/news-files/rss.xml", category: "Tour News" },
   { name: "The Golf News Net", url: "https://thegolfnewsnet.com/feed/", category: "Tour News" },
   { name: "GolfBlogger", url: "https://golfblogger.com/feed/", category: "Tour News" },
+  { name: "Golf Channel", url: "https://www.golfchannel.com/rss", category: "Tour News" },
+  { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News" },
+  { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News" },
+  { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
+  { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12040", category: "Tour News" },
+  { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News" },
 
   // === EQUIPMENT ===
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment" },
@@ -48,7 +54,7 @@ const GOLF_FEEDS = [
   // === MENTAL GAME ===
   { name: "Golf State of Mind", url: "https://golfstateofmind.com/feed/", category: "Mental Game" },
 
-  // === INSTRUCTION & TIPS ===
+  // === INSTRUCTION ===
   { name: "Golf Span", url: "https://golfspan.com/feed/", category: "Instruction" },
   { name: "The Pro Golf", url: "https://theprogolf.com/feed/", category: "Instruction" },
   { name: "Andrew Rice Golf", url: "https://andrewricegolf.com/andrew-rice-golf/feed/", category: "Instruction" },
@@ -56,28 +62,28 @@ const GOLF_FEEDS = [
   // === SENIOR GOLF ===
   { name: "Senior Golf Source", url: "https://seniorgolfsource.com/feed/", category: "Senior Golf" },
 
-  // === FASHION & STYLE ===
+  // === FASHION ===
   { name: "Golf Threads", url: "https://golf-threads.com/feed/", category: "Fashion" },
 
-  // === GOLF MONTHLY / MAGAZINES ===
+  // === MAGAZINE ===
   { name: "Golf Monthly", url: "https://golfmonthly.com/feed/", category: "Magazine" },
 
-  // === BETTING & FANTASY ===
+  // === BETTING ===
   { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting" },
 ];
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export async function GET() {
   const results = await Promise.allSettled(
     GOLF_FEEDS.map(async (feed) => {
       try {
         const parsed = await parser.parseURL(feed.url);
-        return (parsed.items || []).slice(0, 10).map((item) => ({
+        return (parsed.items || []).slice(0, 15).map((item) => ({
           title: item.title || "Untitled",
           link: item.link || item.guid || "#",
-          description: (item.contentSnippet || item.content || "").slice(
-            0,
-            300
-          ),
+          description: (item.contentSnippet || item.content || "").slice(0, 300),
           pubDate: item.pubDate || item.isoDate || "",
           feedName: feed.name,
           feedCategory: feed.category,
@@ -103,11 +109,17 @@ export async function GET() {
 
   articles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-  return Response.json({
+  return new Response(JSON.stringify({
     articles,
     errors,
     total: articles.length,
     sources: GOLF_FEEDS.length,
     fetchedAt: new Date().toISOString(),
+  }), {
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      "Pragma": "no-cache",
+    },
   });
 }
