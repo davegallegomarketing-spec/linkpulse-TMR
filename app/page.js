@@ -101,6 +101,51 @@ function generatePlainText(title, articles) {
   return lines.join("\n");
 }
 
+function generateCardsHTML(title, articles, topCardCount) {
+  var count = topCardCount || 3;
+  var header =
+    '<h2 style="font-family:Georgia,serif;color:#1a1a1a;border-bottom:2px solid #15803d;padding-bottom:8px;">' +
+    title +
+    "</h2>\n";
+
+  var body = articles
+    .map(function (a, i) {
+      if (i < count) {
+        // Top articles: just the URL on its own line — Substack auto-generates a visual card
+        return (
+          '<div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e5e5;">\n' +
+          '<h3 style="margin:0 0 8px;font-family:Georgia,serif;color:#1a1a1a;">' +
+          (i + 1) + ". " + a.title +
+          "</h3>\n" +
+          '<p style="margin:0 0 10px;color:#666;font-size:14px;">' +
+          truncate(a.description, 160) +
+          "</p>\n" +
+          a.link + "\n" +
+          "</div>"
+        );
+      } else {
+        // Remaining articles: compact text links
+        return (
+          '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid #eee;">\n' +
+          '<h3 style="margin:0 0 4px;font-family:Georgia,serif;font-size:16px;"><a href="' +
+          a.link +
+          '" style="color:#15803d;text-decoration:none;">' +
+          (i + 1) + ". " + a.title +
+          "</a></h3>\n" +
+          '<p style="margin:0 0 6px;color:#888;font-size:13px;">' +
+          truncate(a.description, 120) +
+          "</p>\n" +
+          '<a href="' + a.link + '" style="color:#15803d;font-size:12px;text-decoration:none;font-weight:bold;">Read more \u2192</a>' +
+          '<span style="color:#bbb;font-size:11px;margin-left:10px;">' + a.feedName + "</span>\n" +
+          "</div>"
+        );
+      }
+    })
+    .join("\n");
+
+  return header + body;
+}
+
 function Tab({ active, onClick, children, count }) {
   return (
     <button
@@ -754,7 +799,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
-  const [previewFormat, setPreviewFormat] = useState("html");
+  const [previewFormat, setPreviewFormat] = useState("cards");
   const [filterCategory, setFilterCategory] = useState("All");
   const [filterTime, setFilterTime] = useState("all");
   const [imagesOnly, setImagesOnly] = useState(false);
@@ -939,7 +984,9 @@ export default function Home() {
         day: "numeric",
         year: "numeric",
       });
-    var html = generateNewsletterHTML(title, selectedList);
+    var html = previewFormat === "cards"
+      ? generateCardsHTML(title, selectedList, 3)
+      : generateNewsletterHTML(title, selectedList);
     var plain = generatePlainText(title, selectedList);
 
     function onCopySuccess() {
@@ -948,7 +995,9 @@ export default function Home() {
       setTimeout(function () { setCopied(false); }, 2000);
     }
 
-    if (previewFormat === "html") {
+    if (previewFormat === "text") {
+      navigator.clipboard.writeText(plain).then(onCopySuccess);
+    } else {
       var blob = new Blob([html], { type: "text/html" });
       var blobPlain = new Blob([plain], { type: "text/plain" });
       var item = new ClipboardItem({
@@ -958,8 +1007,6 @@ export default function Home() {
       navigator.clipboard.write([item]).then(onCopySuccess).catch(function () {
         navigator.clipboard.writeText(html).then(onCopySuccess);
       });
-    } else {
-      navigator.clipboard.writeText(plain).then(onCopySuccess);
     }
   }
 
@@ -1539,7 +1586,7 @@ export default function Home() {
                   }}
                 >
                   <div style={{ display: "flex", gap: 6 }}>
-                    {["html", "text"].map(function (f) {
+                    {["cards", "html", "text"].map(function (f) {
                       return (
                         <button
                           key={f}
@@ -1560,7 +1607,7 @@ export default function Home() {
                             cursor: "pointer",
                           }}
                         >
-                          {f === "html" ? "HTML (Substack)" : "Plain Text"}
+                          {f === "html" ? "Links Only" : f === "cards" ? "\u2B50 Visual Cards" : "Plain Text"}
                         </button>
                       );
                     })}
@@ -1586,7 +1633,7 @@ export default function Home() {
                 <div
                   style={{
                     background:
-                      previewFormat === "html"
+                      previewFormat !== "text"
                         ? "#fafaf9"
                         : "rgba(255,255,255,0.02)",
                     borderRadius: 12,
@@ -1596,7 +1643,101 @@ export default function Home() {
                     border: "1px solid rgba(255,255,255,0.08)",
                   }}
                 >
-                  {previewFormat === "html" ? (
+                  {previewFormat === "cards" ? (
+                    <div>
+                      <h2
+                        style={{
+                          fontFamily: "Georgia, serif",
+                          color: "#1a1a1a",
+                          borderBottom: "2px solid #15803d",
+                          paddingBottom: 10,
+                          marginTop: 0,
+                          fontSize: 20,
+                        }}
+                      >
+                        Golf Daily &mdash;{" "}
+                        {new Date().toLocaleDateString("en-US", {
+                          weekday: "long",
+                          month: "long",
+                          day: "numeric",
+                        })}
+                      </h2>
+                      {selectedList.map(function (a, i) {
+                        if (i < 3) {
+                          // Visual card preview
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                marginBottom: 24,
+                                paddingBottom: 24,
+                                borderBottom: "1px solid #e5e5e5",
+                              }}
+                            >
+                              <h3 style={{ margin: "0 0 8px", fontSize: 17, fontFamily: "Georgia, serif", color: "#1a1a1a" }}>
+                                {i + 1}. {a.title}
+                              </h3>
+                              <p style={{ margin: "0 0 10px", color: "#666", fontSize: 13, lineHeight: 1.5 }}>
+                                {truncate(a.description, 160)}
+                              </p>
+                              <div style={{
+                                border: "1px solid #ddd",
+                                borderRadius: 8,
+                                padding: 14,
+                                background: "#f9f9f9",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                              }}>
+                                <div style={{
+                                  width: 20, height: 20, borderRadius: 4,
+                                  background: "#15803d",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  fontSize: 10, color: "#fff", fontWeight: 700, flexShrink: 0,
+                                }}>
+                                  {"\u26A1"}
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: "#1a1a1a", marginBottom: 2 }}>
+                                    Substack will auto-generate a visual card here
+                                  </div>
+                                  <div style={{ fontSize: 10, color: "#999", wordBreak: "break-all" }}>
+                                    {a.link}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ fontSize: 10, color: "#bbb", marginTop: 6, fontStyle: "italic" }}>
+                                {a.feedName} &mdash; Paste this into Substack and it becomes a rich preview card with image
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          // Compact text link
+                          return (
+                            <div
+                              key={i}
+                              style={{
+                                marginBottom: 14,
+                                paddingBottom: 14,
+                                borderBottom: i < selectedList.length - 1 ? "1px solid #eee" : "none",
+                              }}
+                            >
+                              <h3 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: "Georgia, serif" }}>
+                                <a href={a.link} target="_blank" rel="noopener noreferrer" style={{ color: "#15803d", textDecoration: "none" }}>
+                                  {i + 1}. {a.title}
+                                </a>
+                              </h3>
+                              <p style={{ margin: "0 0 4px", color: "#888", fontSize: 12 }}>
+                                {truncate(a.description, 120)}
+                              </p>
+                              <span style={{ color: "#15803d", fontSize: 11, fontWeight: 600 }}>Read more &rarr;</span>
+                              <span style={{ color: "#ccc", fontSize: 10, marginLeft: 8 }}>{a.feedName}</span>
+                            </div>
+                          );
+                        }
+                      })}
+                    </div>
+                  ) : previewFormat === "html" ? (
                     <div>
                       <h2
                         style={{
@@ -1760,11 +1901,24 @@ export default function Home() {
                       lineHeight: 1.8,
                     }}
                   >
-                    <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Click "Copy to Clipboard" above<br/>
-                    <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Go to Substack &rarr; New Post<br/>
-                    <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Click inside the editor and press Ctrl+V (or Cmd+V)<br/>
-                    <strong style={{ color: "#9ca3af" }}>Step 4:</strong> The headlines, links, and descriptions paste in formatted. Add a subject line and hit Publish.<br/>
-                    All links go directly to the original source.
+                    {previewFormat === "cards" ? (
+                      <>
+                        <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Click "Copy to Clipboard" above<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Go to Substack &rarr; New Post<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Paste with Ctrl+V (or Cmd+V)<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 4:</strong> The top 3 articles will show as bare URLs &mdash; Substack automatically turns these into beautiful visual cards with the article's hero image, title, and description<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 5:</strong> Articles 4-10 paste as compact text links<br/>
+                        <strong style={{ color: "#4ade80" }}>Result:</strong> A professional newsletter with 3 visual cards + 7 text links. Zero image work.
+                      </>
+                    ) : (
+                      <>
+                        <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Click "Copy to Clipboard" above<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Go to Substack &rarr; New Post<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Click inside the editor and press Ctrl+V (or Cmd+V)<br/>
+                        <strong style={{ color: "#9ca3af" }}>Step 4:</strong> Add a subject line and hit Publish.<br/>
+                        All links go directly to the original source.
+                      </>
+                    )}
                   </div>
                 </div>
               </>
