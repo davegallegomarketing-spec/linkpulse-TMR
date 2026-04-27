@@ -187,6 +187,18 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
     domain = "";
   }
 
+  // Calculate age for labels
+  var ageMs = Date.now() - new Date(article.pubDate).getTime();
+  var ageHours = ageMs / 3600000;
+  var label = null;
+  if (ageHours < 3) {
+    label = { text: "NEW", bg: "#dc2626", color: "#fff", glow: "0 0 8px rgba(220,38,38,0.4)" };
+  } else if (ageHours < 8) {
+    label = { text: "HOT", bg: "#ea580c", color: "#fff", glow: "0 0 8px rgba(234,88,12,0.3)" };
+  } else if (ageHours < 24) {
+    label = { text: "TODAY", bg: "#0c2e3d", color: "#38bdf8", glow: "none" };
+  }
+
   return (
     <div
       onClick={onToggle}
@@ -266,6 +278,22 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
           <span style={{ color: "#6b7280", fontSize: 11 }}>
             {formatDate(article.pubDate)}
           </span>
+          {label && !isSent && (
+            <span style={{
+              background: label.bg,
+              color: label.color,
+              padding: "1px 7px",
+              borderRadius: 3,
+              fontSize: 9,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              boxShadow: label.glow,
+              animation: label.text === "NEW" ? "pulse 2s infinite" : "none",
+            }}>
+              {label.text}
+            </span>
+          )}
           {isSent && (
             <span style={{
               background: "rgba(251,146,60,0.15)",
@@ -524,6 +552,7 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [previewFormat, setPreviewFormat] = useState("html");
   const [filterCategory, setFilterCategory] = useState("All");
+  const [filterTime, setFilterTime] = useState("all");
   const [fetchMeta, setFetchMeta] = useState(null);
   const [sentUrls, setSentUrls] = useState({});
   const [hidePublished, setHidePublished] = useState(false);
@@ -565,7 +594,7 @@ export default function Home() {
     setLoading(true);
     setError(null);
     try {
-      var res = await fetch("/api/feeds");
+      var res = await fetch("/api/feeds?t=" + Date.now());
       if (!res.ok) throw new Error("HTTP " + res.status);
       var data = await res.json();
       setArticles(data.articles || []);
@@ -581,12 +610,21 @@ export default function Home() {
     setLoading(false);
   }, []);
 
+  // Initial load
   useEffect(
     function () {
       loadFeeds();
     },
     [loadFeeds]
   );
+
+  // Auto-refresh every 15 minutes
+  useEffect(function () {
+    var interval = setInterval(function () {
+      loadFeeds();
+    }, 15 * 60 * 1000);
+    return function () { clearInterval(interval); };
+  }, [loadFeeds]);
 
   var categories = [
     "All",
@@ -598,6 +636,24 @@ export default function Home() {
       : articles.filter(function (a) {
           return a.feedCategory === filterCategory;
         });
+
+  // Apply time filter
+  if (filterTime !== "all") {
+    var now = Date.now();
+    var maxAge = filterTime === "3h" ? 3 * 3600000
+               : filterTime === "8h" ? 8 * 3600000
+               : filterTime === "24h" ? 24 * 3600000
+               : filterTime === "48h" ? 48 * 3600000
+               : Infinity;
+    filteredArticles = filteredArticles.filter(function (a) {
+      return (now - new Date(a.pubDate).getTime()) < maxAge;
+    });
+  }
+
+  // Count articles by freshness
+  var countNew = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
+  var countHot = articles.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
+  var countToday = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
   var selectedList = articles.filter(function (_, i) {
     return selectedArticles.has(i);
   });
@@ -866,6 +922,56 @@ export default function Home() {
         {tab === "curate" && !loading && (
           <div>
             {articles.length > 0 && (
+              <div>
+                {/* Time filter bar */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 5,
+                  marginBottom: 10, flexWrap: "wrap",
+                }}>
+                  {[
+                    { id: "all", label: "All Time", count: articles.length },
+                    { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", color: "#fff" },
+                    { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", color: "#fff" },
+                    { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", color: "#38bdf8" },
+                    { id: "48h", label: "48h", count: null },
+                  ].map(function (t) {
+                    var isActive = filterTime === t.id;
+                    return (
+                      <button
+                        key={t.id}
+                        onClick={function () { setFilterTime(t.id); }}
+                        style={{
+                          padding: "5px 12px",
+                          borderRadius: 6,
+                          border: isActive ? "1px solid " + (t.bg || "rgba(21,128,61,0.4)") : "1px solid rgba(255,255,255,0.08)",
+                          background: isActive ? (t.bg || "#15803d") : "transparent",
+                          color: isActive ? (t.color || "#fff") : "#6b7280",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                        }}
+                      >
+                        {t.label}
+                        {t.count !== null && (
+                          <span style={{
+                            background: isActive ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.08)",
+                            padding: "0 5px",
+                            borderRadius: 8,
+                            fontSize: 9,
+                          }}>{t.count}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                  <span style={{ marginLeft: "auto", color: "#4b5563", fontSize: 10 }}>
+                    {fetchMeta ? "Updated " + formatDate(fetchMeta.fetchedAt) : ""}
+                  </span>
+                </div>
+
+                {/* Category filter bar */}
               <div
                 style={{
                   display: "flex",
@@ -1004,6 +1110,7 @@ export default function Home() {
                   </button>
                 </div>
               )}
+              </div>
             )}
 
             {articles.length === 0 && !error ? (
