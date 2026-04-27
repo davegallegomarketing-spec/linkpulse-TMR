@@ -283,12 +283,19 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
         <div
           style={{
             display: "flex",
-            alignItems: "center",
-            gap: 7,
-            marginBottom: 4,
-            flexWrap: "wrap",
+            gap: 12,
           }}
         >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 7,
+                marginBottom: 4,
+                flexWrap: "wrap",
+              }}
+            >
           <span
             style={{
               background: catColor.bg,
@@ -372,7 +379,31 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
         >
           {truncate(article.description, 130)}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          </div>
+          {article.image && (
+            <div style={{
+              width: 88,
+              height: 88,
+              borderRadius: 8,
+              overflow: "hidden",
+              flexShrink: 0,
+              background: "#1a1a1a",
+            }}>
+              <img
+                src={article.image}
+                alt=""
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "cover",
+                  display: "block",
+                }}
+                onError={function (e) { e.target.style.display = "none"; }}
+              />
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6 }}>
           <svg width="10" height="10" viewBox="0 0 16 16" fill="#4ade80">
             <path d="M6.354 5.5H4a3 3 0 0 0 0 6h3a3 3 0 0 0 2.83-4H9.874a2 2 0 0 1-1.874 2H5a2 2 0 1 1 0-4h1.354zM9.646 10.5H12a3 3 0 1 0 0-6H9a3 3 0 0 0-2.83 4h1.016A2 2 0 0 1 9 6.5h3a2 2 0 1 1 0 4h-1.354z" />
           </svg>
