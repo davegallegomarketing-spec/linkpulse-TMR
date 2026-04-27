@@ -390,20 +390,40 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
         </div>
           </div>
           {article.image && article.image.length > 10 && article.image.startsWith("http") && (
-            <div style={{
-              width: 44,
-              height: 44,
-              borderRadius: 8,
-              flexShrink: 0,
-              background: "rgba(74,222,128,0.08)",
-              border: "1px solid rgba(74,222,128,0.15)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 18,
-            }} title="Has image on source">
+            <a
+              href={article.image}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={function (e) { e.stopPropagation(); }}
+              title="View source image"
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: 8,
+                flexShrink: 0,
+                background: "rgba(74,222,128,0.08)",
+                border: "1px solid rgba(74,222,128,0.15)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 18,
+                textDecoration: "none",
+                cursor: "pointer",
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={function (e) {
+                e.currentTarget.style.background = "rgba(74,222,128,0.2)";
+                e.currentTarget.style.borderColor = "rgba(74,222,128,0.4)";
+                e.currentTarget.style.transform = "scale(1.05)";
+              }}
+              onMouseLeave={function (e) {
+                e.currentTarget.style.background = "rgba(74,222,128,0.08)";
+                e.currentTarget.style.borderColor = "rgba(74,222,128,0.15)";
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
               {"\uD83D\uDDBC\uFE0F"}
-            </div>
+            </a>
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6 }}>
