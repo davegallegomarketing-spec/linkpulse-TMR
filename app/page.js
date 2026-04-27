@@ -2,21 +2,21 @@
 import { useState, useEffect, useCallback } from "react";
 
 const CATEGORY_COLORS = {
-  "Tour News": { bg: "#0c3d1a", text: "#4ade80" },
-  Equipment: { bg: "#3d2e0c", text: "#fbbf24" },
-  Reviews: { bg: "#3d0c2e", text: "#f472b6" },
-  Industry: { bg: "#0c2e3d", text: "#38bdf8" },
-  LPGA: { bg: "#2e0c3d", text: "#c084fc" },
-  Community: { bg: "#1a3d0c", text: "#a3e635" },
-  Lifestyle: { bg: "#3d1a0c", text: "#fb923c" },
-  "Mental Game": { bg: "#0c3d3d", text: "#2dd4bf" },
-  Instruction: { bg: "#0c1a3d", text: "#60a5fa" },
-  "Senior Golf": { bg: "#3d3d0c", text: "#facc15" },
-  "European Tour": { bg: "#1a0c3d", text: "#a78bfa" },
-  Travel: { bg: "#3d0c1a", text: "#fb7185" },
-  Fashion: { bg: "#2e3d0c", text: "#bef264" },
-  Magazine: { bg: "#0c2e2e", text: "#5eead4" },
-  Betting: { bg: "#3d2e1a", text: "#fdba74" },
+  "Tour News": { bg: "#064e1f", text: "#4ade80", icon: "\uD83C\uDFCC\uFE0F" },
+  Equipment: { bg: "#4a2508", text: "#fbbf24", icon: "\uD83C\uDFCC\uFE0F\u200D\u2642\uFE0F" },
+  Reviews: { bg: "#4a0833", text: "#f472b6", icon: "\u2B50" },
+  Industry: { bg: "#082f4a", text: "#38bdf8", icon: "\uD83D\uDCBC" },
+  LPGA: { bg: "#35084a", text: "#c084fc", icon: "\uD83C\uDFCC\uFE0F\u200D\u2640\uFE0F" },
+  Community: { bg: "#1e4a08", text: "#a3e635", icon: "\uD83D\uDCAC" },
+  Lifestyle: { bg: "#4a1f08", text: "#fb923c", icon: "\u2600\uFE0F" },
+  "Mental Game": { bg: "#084a4a", text: "#2dd4bf", icon: "\uD83E\uDDE0" },
+  Instruction: { bg: "#08204a", text: "#60a5fa", icon: "\uD83C\uDFAF" },
+  "Senior Golf": { bg: "#4a4a08", text: "#facc15", icon: "\uD83C\uDFC6" },
+  "European Tour": { bg: "#20084a", text: "#a78bfa", icon: "\uD83C\uDDEA\uD83C\uDDFA" },
+  Travel: { bg: "#4a0820", text: "#fb7185", icon: "\u2708\uFE0F" },
+  Fashion: { bg: "#334a08", text: "#bef264", icon: "\uD83D\uDC54" },
+  Magazine: { bg: "#083a3a", text: "#5eead4", icon: "\uD83D\uDCF0" },
+  Betting: { bg: "#4a3308", text: "#fdba74", icon: "\uD83C\uDFB0" },
 };
 
 function formatDate(dateStr) {
@@ -172,7 +172,7 @@ function CopyButton({ url }) {
   );
 }
 
-function ArticleCard({ article, selected, onToggle, isSent }) {
+function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
   var catColor = CATEGORY_COLORS[article.feedCategory] || {
     bg: "#1f2937",
     text: "#9ca3af",
@@ -190,13 +190,26 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
   // Calculate age for labels
   var ageMs = Date.now() - new Date(article.pubDate).getTime();
   var ageHours = ageMs / 3600000;
-  var label = null;
+
+  // Build label array (can show multiple)
+  var labels = [];
+
+  // Trending/breaking labels from score
+  if (trendScore && trendScore.score >= 8) {
+    labels.push({ text: "BREAKING", bg: "#dc2626", color: "#fff", glow: "0 0 10px rgba(220,38,38,0.5)" });
+  } else if (trendScore && trendScore.score >= 5) {
+    labels.push({ text: "TRENDING", bg: "#7c3aed", color: "#fff", glow: "0 0 8px rgba(124,58,237,0.4)" });
+  } else if (trendScore && trendScore.score >= 3) {
+    labels.push({ text: "BUZZ", bg: "#0369a1", color: "#fff", glow: "none" });
+  }
+
+  // Time-based labels
   if (ageHours < 3) {
-    label = { text: "NEW", bg: "#dc2626", color: "#fff", glow: "0 0 8px rgba(220,38,38,0.4)" };
+    labels.push({ text: "NEW", bg: "#dc2626", color: "#fff", glow: "0 0 8px rgba(220,38,38,0.4)" });
   } else if (ageHours < 8) {
-    label = { text: "HOT", bg: "#ea580c", color: "#fff", glow: "0 0 8px rgba(234,88,12,0.3)" };
+    labels.push({ text: "HOT", bg: "#ea580c", color: "#fff", glow: "0 0 8px rgba(234,88,12,0.3)" });
   } else if (ageHours < 24) {
-    label = { text: "TODAY", bg: "#0c2e3d", color: "#38bdf8", glow: "none" };
+    labels.push({ text: "TODAY", bg: "#0c2e3d", color: "#38bdf8", glow: "none" });
   }
 
   return (
@@ -207,21 +220,35 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
         gap: 12,
         padding: "14px 16px",
         background: selected
-          ? "rgba(21,128,61,0.08)"
+          ? "rgba(21,128,61,0.12)"
           : isSent
           ? "rgba(251,146,60,0.03)"
-          : "rgba(255,255,255,0.015)",
+          : "rgba(255,255,255,0.02)",
         borderRadius: 10,
         cursor: "pointer",
         border: selected
-          ? "1px solid rgba(21,128,61,0.35)"
+          ? "1px solid rgba(74,222,128,0.4)"
           : isSent
           ? "1px solid rgba(251,146,60,0.15)"
-          : "1px solid rgba(255,255,255,0.05)",
-        transition: "all 0.12s",
+          : "1px solid rgba(255,255,255,0.06)",
+        transition: "all 0.15s",
         alignItems: "flex-start",
         animation: "fadeIn 0.3s ease",
-        opacity: isSent && !selected ? 0.55 : 1,
+        opacity: isSent && !selected ? 0.5 : 1,
+        boxShadow: selected ? "0 0 16px rgba(21,128,61,0.15)" : "none",
+        transform: selected ? "scale(1.005)" : "none",
+      }}
+      onMouseEnter={function (e) {
+        if (!selected && !isSent) {
+          e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+          e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+        }
+      }}
+      onMouseLeave={function (e) {
+        if (!selected && !isSent) {
+          e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+          e.currentTarget.style.borderColor = "rgba(255,255,255,0.06)";
+        }
       }}
     >
       <div
@@ -231,12 +258,13 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
           borderRadius: 6,
           flexShrink: 0,
           marginTop: 2,
-          border: selected ? "2px solid #15803d" : "2px solid #4b5563",
-          background: selected ? "#15803d" : "transparent",
+          border: selected ? "2px solid #4ade80" : "2px solid #4b5563",
+          background: selected ? "linear-gradient(135deg, #15803d, #22c55e)" : "transparent",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          transition: "all 0.12s",
+          transition: "all 0.15s",
+          boxShadow: selected ? "0 0 8px rgba(74,222,128,0.3)" : "none",
         }}
       >
         {selected && (
@@ -265,33 +293,45 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
             style={{
               background: catColor.bg,
               color: catColor.text,
-              padding: "2px 8px",
-              borderRadius: 4,
+              padding: "2px 9px",
+              borderRadius: 5,
               fontSize: 10,
-              fontWeight: 600,
+              fontWeight: 700,
               textTransform: "uppercase",
               letterSpacing: "0.4px",
+              border: "1px solid " + catColor.text + "33",
+              display: "flex",
+              alignItems: "center",
+              gap: 3,
             }}
           >
+            {catColor.icon && <span style={{ fontSize: 10 }}>{catColor.icon}</span>}
             {article.feedName}
           </span>
           <span style={{ color: "#6b7280", fontSize: 11 }}>
             {formatDate(article.pubDate)}
           </span>
-          {label && !isSent && (
-            <span style={{
-              background: label.bg,
-              color: label.color,
-              padding: "1px 7px",
-              borderRadius: 3,
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-              boxShadow: label.glow,
-              animation: label.text === "NEW" ? "pulse 2s infinite" : "none",
-            }}>
-              {label.text}
+          {!isSent && labels.map(function (lb, li) {
+            return (
+              <span key={li} style={{
+                background: lb.bg,
+                color: lb.color,
+                padding: "1px 7px",
+                borderRadius: 3,
+                fontSize: 9,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                boxShadow: lb.glow,
+                animation: lb.text === "NEW" || lb.text === "BREAKING" ? "pulse 2s infinite" : "none",
+              }}>
+                {lb.text === "TRENDING" ? "\u2191 " : lb.text === "BREAKING" ? "\u26A1 " : ""}{lb.text}
+              </span>
+            );
+          })}
+          {trendScore && trendScore.reason && !isSent && (
+            <span style={{ color: "#4b5563", fontSize: 9, fontStyle: "italic" }}>
+              {trendScore.reason}
             </span>
           )}
           {isSent && (
@@ -311,21 +351,23 @@ function ArticleCard({ article, selected, onToggle, isSent }) {
         </div>
         <div
           style={{
-            color: "#e5e7eb",
-            fontSize: 14,
-            fontWeight: 600,
+            color: selected ? "#fff" : "#f0f0f0",
+            fontSize: 15,
+            fontWeight: 700,
             lineHeight: 1.4,
-            marginBottom: 4,
+            marginBottom: 5,
+            transition: "color 0.15s",
           }}
         >
           {article.title}
         </div>
         <div
           style={{
-            color: "#6b7280",
+            color: selected ? "#a7f3d0" : "#8b8b8b",
             fontSize: 12,
             lineHeight: 1.5,
             marginBottom: 6,
+            transition: "color 0.15s",
           }}
         >
           {truncate(article.description, 130)}
@@ -543,6 +585,129 @@ function CostCalculator() {
   );
 }
 
+// ============================================
+// SMART TRENDING DETECTION ENGINE (free, no API)
+// ============================================
+function detectTrending(articles) {
+  if (!articles || articles.length === 0) return {};
+
+  // Breaking/hot keywords and their weights
+  var breakingWords = {
+    "wins": 3, "won": 3, "victory": 3, "champion": 3,
+    "breaks": 4, "record": 3, "breaking": 4, "broken": 3,
+    "injury": 3, "injured": 3, "withdraws": 4, "withdrawn": 4, "WD": 4,
+    "suspended": 4, "banned": 4, "disqualified": 4, "DQ": 4,
+    "trade": 3, "deal": 3, "signs": 3, "contract": 3,
+    "fired": 4, "resigns": 4, "retires": 4, "retirement": 4,
+    "merger": 3, "lawsuit": 3, "investigation": 3,
+    "ace": 3, "hole-in-one": 3, "albatross": 4, "59": 4, "63": 2, "62": 3,
+    "major": 2, "masters": 2, "open": 1, "PGA": 1, "ryder": 3, "cup": 1,
+    "lead": 2, "leads": 2, "leader": 2, "leaderboard": 2,
+    "playoff": 3, "sudden": 2, "eagle": 1,
+    "controversial": 3, "controversy": 3, "protest": 3,
+    "LIV": 2, "PIF": 2, "Saudi": 2,
+    "Tiger": 2, "Woods": 2, "Scheffler": 2, "McIlroy": 2, "Rory": 2,
+    "Rahm": 2, "Koepka": 2, "Mickelson": 2, "Spieth": 2, "Korda": 2,
+  };
+
+  // Major sources get a credibility boost
+  var majorSources = {
+    "Golf.com": 2, "ESPN Golf": 3, "BBC Golf": 3, "Sky Sports Golf": 2,
+    "Golf Digest": 2, "Golf Channel": 2, "PGA Tour": 3, "GolfWRX": 1,
+  };
+
+  // Step 1: Extract key topics from all headlines
+  var topicCounts = {};
+  articles.forEach(function (a) {
+    var words = a.title.toLowerCase().replace(/[^a-z0-9\s'-]/g, "").split(/\s+/);
+    // Extract 2-word phrases (bigrams) for topic detection
+    for (var i = 0; i < words.length - 1; i++) {
+      var bigram = words[i] + " " + words[i + 1];
+      // Filter out common filler bigrams
+      var fillers = ["the ", "a ", "an ", "in ", "at ", "of ", "to ", "for ", "is ", "on ", "it ", "and ", "or ", "with ", "has ", "this ", "that "];
+      var isFiller = false;
+      fillers.forEach(function (f) { if (bigram.indexOf(f) === 0) isFiller = true; });
+      if (!isFiller && bigram.length > 5) {
+        if (!topicCounts[bigram]) topicCounts[bigram] = [];
+        topicCounts[bigram].push(a.feedName);
+      }
+    }
+    // Also track proper nouns (capitalized words in original title)
+    var origWords = a.title.split(/\s+/);
+    origWords.forEach(function (w) {
+      var clean = w.replace(/[^a-zA-Z'-]/g, "");
+      if (clean.length > 2 && clean[0] === clean[0].toUpperCase() && clean[0] !== clean[0].toLowerCase()) {
+        var lc = clean.toLowerCase();
+        if (!topicCounts[lc]) topicCounts[lc] = [];
+        topicCounts[lc].push(a.feedName);
+      }
+    });
+  });
+
+  // Step 2: Find topics covered by multiple sources (cross-source = trending)
+  var trendingTopics = {};
+  Object.keys(topicCounts).forEach(function (topic) {
+    var uniqueSources = Array.from(new Set(topicCounts[topic]));
+    if (uniqueSources.length >= 2) {
+      trendingTopics[topic] = uniqueSources.length;
+    }
+  });
+
+  // Step 3: Score each article
+  var scores = {};
+  articles.forEach(function (a, idx) {
+    var score = 0;
+    var reasons = [];
+    var titleLower = a.title.toLowerCase();
+    var ageHours = (Date.now() - new Date(a.pubDate).getTime()) / 3600000;
+
+    // Keyword scoring
+    Object.keys(breakingWords).forEach(function (word) {
+      if (titleLower.indexOf(word.toLowerCase()) !== -1) {
+        score += breakingWords[word];
+        if (breakingWords[word] >= 3 && reasons.length < 2) {
+          reasons.push(word);
+        }
+      }
+    });
+
+    // Cross-source trending (biggest signal)
+    Object.keys(trendingTopics).forEach(function (topic) {
+      if (titleLower.indexOf(topic) !== -1) {
+        var sourceCount = trendingTopics[topic];
+        score += sourceCount * 2;
+        if (sourceCount >= 3 && reasons.indexOf(sourceCount + " sources") === -1) {
+          reasons.push(sourceCount + " sources");
+        }
+      }
+    });
+
+    // Major source boost
+    if (majorSources[a.feedName]) {
+      score += majorSources[a.feedName];
+    }
+
+    // Recency multiplier
+    if (ageHours < 2) score *= 2.0;
+    else if (ageHours < 6) score *= 1.5;
+    else if (ageHours < 12) score *= 1.2;
+    else if (ageHours > 48) score *= 0.5;
+    else if (ageHours > 72) score *= 0.3;
+
+    score = Math.round(score * 10) / 10;
+
+    if (score > 0) {
+      var reason = "";
+      if (reasons.length > 0) {
+        reason = reasons.slice(0, 2).join(" \u00B7 ");
+      }
+      scores[a.link] = { score: score, reason: reason };
+    }
+  });
+
+  return scores;
+}
+
 export default function Home() {
   const [tab, setTab] = useState("curate");
   const [articles, setArticles] = useState([]);
@@ -630,6 +795,10 @@ export default function Home() {
     "All",
     ...Array.from(new Set(articles.map(function (a) { return a.feedCategory; }))),
   ];
+
+  // Compute trending scores
+  var trendScores = detectTrending(articles);
+
   var filteredArticles =
     filterCategory === "All"
       ? articles
@@ -654,6 +823,31 @@ export default function Home() {
   var countNew = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
   var countHot = articles.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
   var countToday = articles.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
+  var countTrending = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 3; }).length;
+  var countBreaking = articles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 8; }).length;
+
+  // Apply trending filter
+  if (filterTime === "trending") {
+    filteredArticles = filteredArticles.filter(function (a) {
+      var ts = trendScores[a.link];
+      return ts && ts.score >= 3;
+    });
+    filteredArticles.sort(function (a, b) {
+      var sa = (trendScores[a.link] || { score: 0 }).score;
+      var sb = (trendScores[b.link] || { score: 0 }).score;
+      return sb - sa;
+    });
+  } else if (filterTime === "breaking") {
+    filteredArticles = filteredArticles.filter(function (a) {
+      var ts = trendScores[a.link];
+      return ts && ts.score >= 8;
+    });
+    filteredArticles.sort(function (a, b) {
+      var sa = (trendScores[a.link] || { score: 0 }).score;
+      var sb = (trendScores[b.link] || { score: 0 }).score;
+      return sb - sa;
+    });
+  }
   var selectedList = articles.filter(function (_, i) {
     return selectedArticles.has(i);
   });
@@ -930,6 +1124,8 @@ export default function Home() {
                 }}>
                   {[
                     { id: "all", label: "All Time", count: articles.length },
+                    { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", color: "#fff" },
+                    { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", color: "#fff" },
                     { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", color: "#fff" },
                     { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", color: "#fff" },
                     { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", color: "#38bdf8" },
@@ -1148,6 +1344,7 @@ export default function Home() {
                       article={article}
                       selected={selectedArticles.has(idx)}
                       isSent={!!sentUrls[article.link]}
+                      trendScore={trendScores[article.link] || null}
                       onToggle={function () {
                         toggleArticle(idx);
                       }}
@@ -1163,34 +1360,41 @@ export default function Home() {
                   position: "sticky",
                   bottom: 16,
                   marginTop: 16,
-                  background: "linear-gradient(135deg, #15803d, #166534)",
-                  borderRadius: 12,
-                  padding: "14px 20px",
+                  background: "linear-gradient(135deg, #15803d, #059669, #166534)",
+                  borderRadius: 14,
+                  padding: "16px 22px",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
-                  boxShadow: "0 8px 28px rgba(21,128,61,0.35)",
+                  boxShadow: "0 8px 32px rgba(21,128,61,0.4), 0 0 0 1px rgba(74,222,128,0.2)",
+                  animation: "fadeIn 0.3s ease",
                 }}
               >
-                <span style={{ fontWeight: 700, fontSize: 14 }}>
-                  {selectedArticles.size} links selected
-                </span>
+                <div>
+                  <span style={{ fontWeight: 800, fontSize: 16, color: "#fff" }}>
+                    {selectedArticles.size}
+                  </span>
+                  <span style={{ fontWeight: 500, fontSize: 13, color: "rgba(255,255,255,0.8)", marginLeft: 6 }}>
+                    {selectedArticles.size === 1 ? "story" : "stories"} ready to send
+                  </span>
+                </div>
                 <button
                   onClick={function () {
                     setTab("preview");
                   }}
                   style={{
-                    padding: "8px 20px",
-                    background: "rgba(0,0,0,0.25)",
-                    color: "#fff",
+                    padding: "10px 24px",
+                    background: "#fff",
+                    color: "#15803d",
                     border: "none",
                     borderRadius: 8,
-                    fontWeight: 700,
+                    fontWeight: 800,
                     cursor: "pointer",
                     fontSize: 13,
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
                   }}
                 >
-                  Export
+                  Export \u2192
                 </button>
               </div>
             )}
