@@ -49,6 +49,14 @@ function generateNewsletterHTML(title, articles) {
     "</h2>\n";
   var body = articles
     .map(function (a, i) {
+      var imageHtml = "";
+      if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
+        imageHtml =
+          '<a href="' + a.link + '" style="display:block;margin:0 0 10px;">' +
+          '<img src="' + a.image + '" alt="' + a.title.replace(/"/g, '') + '" style="width:100%;max-width:600px;height:auto;border-radius:8px;display:block;" />' +
+          '</a>\n' +
+          '<p style="margin:0 0 8px;color:#bbb;font-size:10px;font-style:italic;">Photo: ' + a.feedName + '</p>\n';
+      }
       return (
         '<div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e5e5;">\n' +
         '<h3 style="margin:0 0 6px;font-family:Georgia,serif;"><a href="' +
@@ -58,6 +66,7 @@ function generateNewsletterHTML(title, articles) {
         ". " +
         a.title +
         "</a></h3>\n" +
+        imageHtml +
         '<p style="margin:0 0 8px;color:#666;font-size:14px;">' +
         truncate(a.description, 160) +
         "</p>\n" +
@@ -380,26 +389,20 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
           {truncate(article.description, 130)}
         </div>
           </div>
-          {article.image && (
+          {article.image && article.image.length > 10 && article.image.startsWith("http") && (
             <div style={{
-              width: 88,
-              height: 88,
+              width: 44,
+              height: 44,
               borderRadius: 8,
-              overflow: "hidden",
               flexShrink: 0,
-              background: "#1a1a1a",
-            }}>
-              <img
-                src={"/api/image?url=" + encodeURIComponent(article.image)}
-                alt=""
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  objectFit: "cover",
-                  display: "block",
-                }}
-                onError={function (e) { e.target.parentElement.style.display = "none"; }}
-              />
+              background: "rgba(74,222,128,0.08)",
+              border: "1px solid rgba(74,222,128,0.15)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 18,
+            }} title="Has image on source">
+              {"\uD83D\uDDBC\uFE0F"}
             </div>
           )}
         </div>
@@ -873,10 +876,14 @@ export default function Home() {
 
   // Apply images-only filter
   if (imagesOnly) {
-    filteredArticles = filteredArticles.filter(function (a) { return !!a.image; });
+    filteredArticles = filteredArticles.filter(function (a) {
+      return a.image && a.image.length > 10 && a.image.startsWith("http");
+    });
   }
 
-  var countWithImages = countBase.filter(function (a) { return !!a.image; }).length;
+  var countWithImages = countBase.filter(function (a) {
+    return a.image && a.image.length > 10 && a.image.startsWith("http");
+  }).length;
 
   var selectedList = articles.filter(function (_, i) {
     return selectedArticles.has(i);
@@ -1620,6 +1627,26 @@ export default function Home() {
                                 {i + 1}. {a.title}
                               </a>
                             </h3>
+                            {a.image && a.image.length > 10 && a.image.startsWith("http") && (
+                              <div>
+                                <img
+                                  src={a.image}
+                                  alt=""
+                                  style={{
+                                    width: "100%",
+                                    maxHeight: 200,
+                                    objectFit: "cover",
+                                    borderRadius: 6,
+                                    marginBottom: 6,
+                                    display: "block",
+                                  }}
+                                  onError={function (e) { e.target.style.display = "none"; }}
+                                />
+                                <p style={{ margin: "0 0 6px", color: "#bbb", fontSize: 10, fontStyle: "italic" }}>
+                                  Photo: {a.feedName}
+                                </p>
+                              </div>
+                            )}
                             <p
                               style={{
                                 margin: "0 0 8px",
