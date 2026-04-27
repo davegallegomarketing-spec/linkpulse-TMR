@@ -390,7 +390,7 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
               background: "#1a1a1a",
             }}>
               <img
-                src={article.image}
+                src={"/api/image?url=" + encodeURIComponent(article.image)}
                 alt=""
                 style={{
                   width: "100%",
@@ -398,7 +398,7 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore }) {
                   objectFit: "cover",
                   display: "block",
                 }}
-                onError={function (e) { e.target.style.display = "none"; }}
+                onError={function (e) { e.target.parentElement.style.display = "none"; }}
               />
             </div>
           )}
