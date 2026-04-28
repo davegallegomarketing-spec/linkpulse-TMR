@@ -1,5 +1,5 @@
 // /api/publish/route.js — Stores curated articles in Vercel Blob (persistent)
-import { put, list } from "@vercel/blob";
+import { put } from "@vercel/blob";
 
 export async function POST(request) {
   try {
@@ -39,19 +39,22 @@ export async function POST(request) {
       }),
     };
 
+    const jsonString = JSON.stringify(editionData);
+
     // Store the edition in Vercel Blob
-    // File path: editions/{dateKey}_{editionName}.json
-    await put("editions/" + storeKey + ".json", JSON.stringify(editionData), {
+    await put("editions/" + storeKey + ".json", jsonString, {
       contentType: "application/json",
       access: "public",
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
 
     // Also store as "latest.json" for easy retrieval
-    await put("editions/latest.json", JSON.stringify(editionData), {
+    await put("editions/latest.json", jsonString, {
       contentType: "application/json",
       access: "public",
       addRandomSuffix: false,
+      allowOverwrite: true,
     });
 
     return new Response(
