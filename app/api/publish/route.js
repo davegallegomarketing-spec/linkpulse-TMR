@@ -15,7 +15,7 @@ export async function POST(request) {
 
     // Build the edition object
     const now = new Date();
-    const dateKey = now.toISOString().split("T")[0]; // e.g. "2026-04-27"
+    const dateKey = now.toISOString().split("T")[0];
     const editionName = edition || "daily";
     const storeKey = dateKey + "_" + editionName;
 
@@ -41,10 +41,10 @@ export async function POST(request) {
 
     const jsonString = JSON.stringify(editionData);
 
-    // Store the edition in Vercel Blob
+    // Store the edition in Vercel Blob (private store)
     await put("editions/" + storeKey + ".json", jsonString, {
       contentType: "application/json",
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
     });
@@ -52,7 +52,7 @@ export async function POST(request) {
     // Also store as "latest.json" for easy retrieval
     await put("editions/latest.json", jsonString, {
       contentType: "application/json",
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       allowOverwrite: true,
     });
