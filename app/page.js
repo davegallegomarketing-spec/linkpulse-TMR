@@ -269,6 +269,9 @@ export default function Home() {
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
   var _sent = useState({}), sentUrls = _sent[0], setSentUrls = _sent[1];
   var _hide = useState(false), hidePublished = _hide[0], setHidePublished = _hide[1];
+  var _pubMode = useState("both"), publishMode = _pubMode[0], setPublishMode = _pubMode[1];
+  var _publishing = useState(false), publishing = _publishing[0], setPublishing = _publishing[1];
+  var _pubResult = useState(null), pubResult = _pubResult[0], setPubResult = _pubResult[1];
 
   useEffect(function () { try { var s = localStorage.getItem("linkpulse-sent"); if (s) setSentUrls(JSON.parse(s)); } catch (e) {} }, []);
   useEffect(function () { try { localStorage.setItem("linkpulse-sent", JSON.stringify(sentUrls)); } catch (e) {} }, [sentUrls]);
@@ -336,6 +339,55 @@ export default function Home() {
       navigator.clipboard.write([new ClipboardItem({ "text/html": b1, "text/plain": b2 })]).then(onOk).catch(function () { navigator.clipboard.writeText(html).then(onOk); });
     }
   }
+
+  async function publishToWebsite() {
+    var title = "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    var res = await fetch("/api/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ articles: orderedSelection, edition: "daily", title: title }),
+    });
+    if (!res.ok) throw new Error("Publish failed: HTTP " + res.status);
+    return res.json();
+  }
+
+  async function handlePublish() {
+    if (orderedSelection.length === 0) return;
+    setPublishing(true);
+    setPubResult(null);
+    var results = { clipboard: false, website: false, error: null };
+    try {
+      // Copy to clipboard (for newsletter)
+      if (publishMode === "newsletter" || publishMode === "both") {
+        var title = "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+        var html = generateNewsletterHTML(title, orderedSelection);
+        var plain = generatePlainText(title, orderedSelection);
+        try {
+          if (previewFormat === "text") { await navigator.clipboard.writeText(plain); }
+          else {
+            var b1 = new Blob([html], { type: "text/html" }), b2 = new Blob([plain], { type: "text/plain" });
+            try { await navigator.clipboard.write([new ClipboardItem({ "text/html": b1, "text/plain": b2 })]); }
+            catch (e) { await navigator.clipboard.writeText(html); }
+          }
+          results.clipboard = true;
+        } catch (e) { results.clipboard = false; }
+      }
+      // Publish to website
+      if (publishMode === "website" || publishMode === "both") {
+        var pubData = await publishToWebsite();
+        results.website = true;
+        results.pubData = pubData;
+      }
+      // Mark as sent
+      markAsSent(orderedSelection);
+      setPubResult(results);
+    } catch (err) {
+      results.error = err.message;
+      setPubResult(results);
+    }
+    setPublishing(false);
+  }
+
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#0a0f0a", color: "#e5e7eb", minHeight: "100vh" }}>
@@ -466,20 +518,80 @@ export default function Home() {
             </div>
           )}
 
-          {/* EXPORT */}
+          {/* EXPORT & PUBLISH */}
           {tab === "preview" && !loading && (
             <div>
               {orderedSelection.length === 0 ? (
                 <div style={{ textAlign: "center", padding: 60, color: "#4b5563" }}><div style={{ fontSize: 30, marginBottom: 12 }}>{"\uD83D\uDCED"}</div>No articles selected. Go to Curate to pick stories.</div>
               ) : (
                 <div>
+                  {/* PUBLISH CONTROLS */}
+                  <div style={{ marginBottom: 20, padding: 18, background: "linear-gradient(135deg, rgba(21,128,61,0.1), rgba(184,134,11,0.06))", borderRadius: 12, border: "1px solid rgba(21,128,61,0.2)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <span style={{ fontSize: 18 }}>{"\uD83D\uDE80"}</span>
+                      <span style={{ color: "#4ade80", fontSize: 14, fontWeight: 800, letterSpacing: "-0.3px" }}>Publish {orderedSelection.length} {orderedSelection.length === 1 ? "story" : "stories"}</span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                      {[
+                        { id: "both", label: "\u26F3 Both (Newsletter + Website)", rec: true },
+                        { id: "newsletter", label: "\uD83D\uDCE8 Newsletter Only" },
+                        { id: "website", label: "\uD83C\uDF10 Website Only" },
+                      ].map(function (m) {
+                        var act = publishMode === m.id;
+                        return <button key={m.id} onClick={function () { setPublishMode(m.id); }} style={{
+                          padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          background: act ? (m.id === "both" ? "linear-gradient(135deg, #15803d, #b8860b)" : "#15803d") : "rgba(255,255,255,0.05)",
+                          color: act ? "#fff" : "#6b7280",
+                          border: act ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                        }}>
+                          {m.label}{m.rec && <span style={{ marginLeft: 6, fontSize: 9, background: "rgba(0,0,0,0.2)", padding: "1px 6px", borderRadius: 4 }}>REC</span>}
+                        </button>;
+                      })}
+                    </div>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <button onClick={handlePublish} disabled={publishing} style={{
+                        padding: "12px 32px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 14, cursor: publishing ? "default" : "pointer",
+                        background: publishing ? "#374151" : "linear-gradient(135deg, #15803d, #059669)",
+                        color: "#fff", display: "flex", alignItems: "center", gap: 8,
+                        boxShadow: publishing ? "none" : "0 4px 16px rgba(21,128,61,0.3)",
+                      }}>
+                        {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
+                        {publishing ? "Publishing\u2026" : "\u26F3 Publish Now"}
+                      </button>
+                      {publishMode !== "website" && (
+                        <span style={{ fontSize: 11, color: "#6b7280" }}>Newsletter HTML will be copied to clipboard</span>
+                      )}
+                    </div>
+                    {/* Publish result feedback */}
+                    {pubResult && (
+                      <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: pubResult.error ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.08)", border: pubResult.error ? "1px solid rgba(239,68,68,0.2)" : "1px solid rgba(74,222,128,0.2)" }}>
+                        {pubResult.error ? (
+                          <div style={{ color: "#f87171", fontSize: 12 }}>{"\u274C"} Error: {pubResult.error}</div>
+                        ) : (
+                          <div>
+                            <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{"\u2705"} Published successfully!</div>
+                            <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#9ca3af" }}>
+                              {pubResult.clipboard && <span>{"\u2713"} Newsletter copied to clipboard</span>}
+                              {pubResult.website && <span>{"\u2713"} Aggregator site updated</span>}
+                            </div>
+                            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                              {pubResult.clipboard && <a href="https://davegallego.substack.com/publish/post" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4ade80", fontWeight: 600 }}>Open Substack &rarr;</a>}
+                              {pubResult.website && <a href="https://mulligan-report-drudge.vercel.app" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#b8860b", fontWeight: 600 }}>View Aggregator &rarr;</a>}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Format toggle + manual copy */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                     <div style={{ display: "flex", gap: 6 }}>
                       {["html", "text"].map(function (f) {
                         return <button key={f} onClick={function () { setPreviewFormat(f); }} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: previewFormat === f ? "#15803d" : "rgba(255,255,255,0.05)", color: previewFormat === f ? "#fff" : "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{f === "html" ? "HTML (Substack)" : "Plain Text"}</button>;
                       })}
                     </div>
-                    <button onClick={copyNewsletter} style={{ padding: "8px 20px", background: copied ? "#4ade80" : "#15803d", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{copied ? "\u2713 Copied!" : "Copy to Clipboard"}</button>
+                    <button onClick={copyNewsletter} style={{ padding: "6px 16px", background: copied ? "#4ade80" : "rgba(255,255,255,0.05)", color: copied ? "#fff" : "#6b7280", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, fontWeight: 600, cursor: "pointer", fontSize: 11 }}>{copied ? "\u2713 Copied!" : "Copy Only"}</button>
                   </div>
                   <div style={{ background: previewFormat === "html" ? "#fafaf9" : "rgba(255,255,255,0.02)", borderRadius: 12, padding: 24, maxHeight: 500, overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)" }}>
                     {previewFormat === "html" ? (
@@ -510,12 +622,12 @@ export default function Home() {
                     )}
                   </div>
                   <div style={{ marginTop: 16, padding: 14, background: "rgba(21,128,61,0.06)", borderRadius: 10, border: "1px solid rgba(21,128,61,0.12)" }}>
-                    <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>How to use with Substack</div>
+                    <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Workflow</div>
                     <div style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.8 }}>
-                      <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Click "Copy to Clipboard" above<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Go to Substack &rarr; New Post<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Paste with Ctrl+V (or Cmd+V)<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 4:</strong> Add a subject line and hit Publish
+                      <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Select publish mode above (Both is recommended)<br/>
+                      <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Click &ldquo;Publish Now&rdquo;<br/>
+                      <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Open Substack &rarr; New Post &rarr; Paste (Ctrl+V)<br/>
+                      <strong style={{ color: "#9ca3af" }}>Step 4:</strong> Aggregator site updates automatically
                     </div>
                   </div>
                 </div>
