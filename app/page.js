@@ -42,7 +42,7 @@ function truncate(str, len) {
   return clean.length > len ? clean.slice(0, len) + "\u2026" : clean;
 }
 
-function generateNewsletterHTML(title, articles) {
+function generateNewsletterHTML(title, articles, golfImages) {
   var header =
     '<h2 style="font-family:Georgia,serif;color:#1a1a1a;border-bottom:2px solid #15803d;padding-bottom:8px;">' +
     title +
@@ -50,8 +50,16 @@ function generateNewsletterHTML(title, articles) {
   var body = articles
     .map(function (a, i) {
       var imageHtml = "";
-      if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
+      // Use golf scene SVG for top 3 if available
+      if (golfImages && i < 3 && golfImages[i]) {
         imageHtml =
+          '<div style="margin:0 0 12px;border-radius:8px;overflow:hidden;">' +
+          golfImages[i] +
+          '</div>\n';
+      }
+      // Also add source image if available
+      if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
+        imageHtml +=
           '<a href="' + a.link + '" style="display:block;margin:0 0 10px;">' +
           '<img src="' + a.image + '" alt="' + a.title.replace(/"/g, '') + '" style="width:100%;max-width:600px;height:auto;border-radius:8px;display:block;" />' +
           '</a>\n' +
@@ -147,6 +155,201 @@ function generateCardsHTML(title, articles, topCardCount) {
 }
 
 function Tab({ active, onClick, children, count }) {
+
+// ============================================
+// GOLF SCENE SVG GENERATOR (free, no API)
+// ============================================
+var GOLF_PALETTES = [
+  { sky1: "#ff7e5f", sky2: "#feb47b", ground: "#2d5016", dark: "#1a3409", water: "#1a6b8a", flag: "#dc2626" }, // sunset
+  { sky1: "#667eea", sky2: "#764ba2", ground: "#1e5631", dark: "#0f3320", water: "#2563eb", flag: "#fbbf24" }, // twilight
+  { sky1: "#f6d365", sky2: "#fda085", ground: "#3a7d1e", dark: "#1f4a0e", water: "#0ea5e9", flag: "#ef4444" }, // golden hour
+  { sky1: "#a8edea", sky2: "#fed6e3", ground: "#4a8c2a", dark: "#2d5a16", water: "#06b6d4", flag: "#e11d48" }, // pastel morning
+  { sky1: "#2c3e50", sky2: "#3498db", ground: "#1a4d1a", dark: "#0d2b0d", water: "#1e40af", flag: "#f59e0b" }, // dusk
+  { sky1: "#ee9ca7", sky2: "#ffdde1", ground: "#2e7d32", dark: "#1b5e20", water: "#0284c7", flag: "#dc2626" }, // rose dawn
+  { sky1: "#ffecd2", sky2: "#fcb69f", ground: "#388e3c", dark: "#1b5e20", water: "#0e7490", flag: "#b91c1c" }, // warm morning
+  { sky1: "#c1dfc4", sky2: "#deecdd", ground: "#4caf50", dark: "#2e7d32", water: "#0369a1", flag: "#991b1b" }, // misty green
+];
+
+function generateGolfSVG(seed) {
+  var r = function (s) { s = ((s * 9301 + 49297) % 233280); return s / 233280; };
+  var s = seed || Math.floor(Math.random() * 99999);
+  var rand = function () { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+
+  var p = GOLF_PALETTES[Math.floor(rand() * GOLF_PALETTES.length)];
+  var hills = [];
+  var numHills = 2 + Math.floor(rand() * 3);
+
+  for (var h = 0; h < numHills; h++) {
+    var hx = rand() * 600;
+    var hy = 180 + h * 30 + rand() * 40;
+    var hw = 200 + rand() * 300;
+    var hh = 40 + rand() * 60;
+    hills.push({ x: hx, y: hy, w: hw, h: hh });
+  }
+
+  var hasWater = rand() > 0.5;
+  var hasTrees = rand() > 0.3;
+  var hasBunker = rand() > 0.5;
+  var hasClouds = rand() > 0.3;
+  var flagX = 200 + rand() * 300;
+  var flagY = 170 + rand() * 50;
+
+  var treeSvg = "";
+  if (hasTrees) {
+    var numTrees = 3 + Math.floor(rand() * 5);
+    for (var t = 0; t < numTrees; t++) {
+      var tx = rand() * 620;
+      var ty = 160 + rand() * 60;
+      var th = 30 + rand() * 50;
+      var tw = 15 + rand() * 20;
+      var tg = Math.floor(rand() * 40 + 20);
+      treeSvg += '<rect x="' + (tx + tw/2 - 3) + '" y="' + ty + '" width="6" height="' + (th * 0.4) + '" fill="#3d2b1f" rx="1"/>';
+      treeSvg += '<ellipse cx="' + (tx + tw/2) + '" cy="' + (ty - th * 0.1) + '" rx="' + tw + '" ry="' + (th * 0.6) + '" fill="rgb(' + tg + ',' + (80 + tg) + ',' + Math.floor(tg * 0.5) + ')" opacity="0.9"/>';
+    }
+  }
+
+  var cloudSvg = "";
+  if (hasClouds) {
+    var numClouds = 2 + Math.floor(rand() * 3);
+    for (var c = 0; c < numClouds; c++) {
+      var cx = rand() * 600;
+      var cy = 30 + rand() * 60;
+      var cw = 40 + rand() * 60;
+      cloudSvg += '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + cw + '" ry="' + (cw * 0.35) + '" fill="white" opacity="0.15"/>';
+      cloudSvg += '<ellipse cx="' + (cx + cw * 0.4) + '" cy="' + (cy - 5) + '" rx="' + (cw * 0.7) + '" ry="' + (cw * 0.25) + '" fill="white" opacity="0.12"/>';
+    }
+  }
+
+  var waterSvg = "";
+  if (hasWater) {
+    var wy = 220 + rand() * 40;
+    waterSvg = '<ellipse cx="' + (rand() * 300 + 150) + '" cy="' + wy + '" rx="' + (80 + rand() * 120) + '" ry="' + (20 + rand() * 15) + '" fill="' + p.water + '" opacity="0.7"/>';
+    waterSvg += '<ellipse cx="' + (rand() * 300 + 150) + '" cy="' + (wy + 2) + '" rx="' + (60 + rand() * 80) + '" ry="' + (8 + rand() * 8) + '" fill="white" opacity="0.08"/>';
+  }
+
+  var bunkerSvg = "";
+  if (hasBunker) {
+    var bx = flagX + (rand() > 0.5 ? 40 : -60);
+    var by = flagY + 20 + rand() * 15;
+    bunkerSvg = '<ellipse cx="' + bx + '" cy="' + by + '" rx="' + (20 + rand() * 15) + '" ry="' + (8 + rand() * 6) + '" fill="#f5e6c8"/>';
+  }
+
+  var svg = '<svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg">' +
+    '<defs><linearGradient id="sky' + seed + '" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="' + p.sky1 + '"/>' +
+    '<stop offset="100%" stop-color="' + p.sky2 + '"/>' +
+    '</linearGradient></defs>' +
+    '<rect width="640" height="300" fill="url(#sky' + seed + ')"/>' +
+    cloudSvg;
+
+  // Sun/moon
+  var sunX = 100 + rand() * 440;
+  var sunY = 40 + rand() * 50;
+  svg += '<circle cx="' + sunX + '" cy="' + sunY + '" r="' + (20 + rand() * 15) + '" fill="#fff4e0" opacity="0.6"/>';
+  svg += '<circle cx="' + sunX + '" cy="' + sunY + '" r="' + (12 + rand() * 8) + '" fill="#fff9e8" opacity="0.8"/>';
+
+  // Hills
+  hills.forEach(function (hill) {
+    svg += '<ellipse cx="' + hill.x + '" cy="' + hill.y + '" rx="' + hill.w + '" ry="' + hill.h + '" fill="' + p.dark + '" opacity="0.8"/>';
+  });
+
+  // Main ground
+  svg += '<rect x="0" y="200" width="640" height="100" fill="' + p.ground + '"/>';
+  svg += '<ellipse cx="320" cy="200" rx="340" ry="30" fill="' + p.ground + '"/>';
+
+  // Fairway stripe
+  svg += '<ellipse cx="' + flagX + '" cy="230" rx="80" ry="50" fill="' + p.dark + '" opacity="0.3"/>';
+
+  svg += treeSvg + waterSvg + bunkerSvg;
+
+  // Flag
+  svg += '<line x1="' + flagX + '" y1="' + (flagY - 45) + '" x2="' + flagX + '" y2="' + flagY + '" stroke="#444" stroke-width="2"/>';
+  svg += '<polygon points="' + flagX + ',' + (flagY - 45) + ' ' + (flagX + 22) + ',' + (flagY - 37) + ' ' + flagX + ',' + (flagY - 29) + '" fill="' + p.flag + '"/>';
+
+  // Green circle
+  svg += '<ellipse cx="' + flagX + '" cy="' + flagY + '" rx="25" ry="8" fill="#5cb85c" opacity="0.5"/>';
+
+  svg += '</svg>';
+  return { svg: svg, seed: s };
+}
+
+function GolfImageGenerator({ onImagesReady, images, setImages }) {
+  function regenerateOne(index) {
+    var newImages = images.slice();
+    var result = generateGolfSVG(Date.now() + index * 7777);
+    newImages[index] = result.svg;
+    setImages(newImages);
+    if (onImagesReady) onImagesReady(newImages);
+  }
+
+  function regenerateAll() {
+    var newImages = [0, 1, 2].map(function (i) {
+      return generateGolfSVG(Date.now() + i * 3333 + Math.floor(Math.random() * 9999)).svg;
+    });
+    setImages(newImages);
+    if (onImagesReady) onImagesReady(newImages);
+  }
+
+  return (
+    <div style={{
+      marginBottom: 16, padding: 16,
+      background: "rgba(21,128,61,0.06)",
+      borderRadius: 10, border: "1px solid rgba(21,128,61,0.15)",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700 }}>
+          {"\uD83C\uDFCC\uFE0F"} Newsletter Images (free, auto-generated)
+        </div>
+        <button onClick={regenerateAll} style={{
+          padding: "5px 12px", background: "rgba(21,128,61,0.2)",
+          border: "1px solid rgba(21,128,61,0.3)", borderRadius: 6,
+          color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer",
+        }}>
+          {"\u21BB"} New Set
+        </button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+        {images.map(function (svg, i) {
+          return (
+            <div key={i} style={{ position: "relative" }}>
+              <div
+                style={{
+                  borderRadius: 8, overflow: "hidden",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  background: "#1a1a1a",
+                }}
+                dangerouslySetInnerHTML={{ __html: svg }}
+              />
+              <button
+                onClick={function () { regenerateOne(i); }}
+                style={{
+                  position: "absolute", top: 6, right: 6,
+                  width: 24, height: 24, borderRadius: 6,
+                  background: "rgba(0,0,0,0.6)", border: "none",
+                  color: "#fff", fontSize: 12, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}
+                title="Regenerate this image"
+              >
+                {"\u21BB"}
+              </button>
+              <div style={{
+                textAlign: "center", color: "#6b7280", fontSize: 10, marginTop: 4,
+              }}>
+                Image {i + 1} — placed before article {i + 1}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ color: "#4b5563", fontSize: 10, marginTop: 8, fontStyle: "italic" }}>
+        These golf scene illustrations are generated in your browser. Click {"\u21BB"} on any image to get a new one. They'll be embedded in your newsletter above articles 1, 2, and 3.
+      </div>
+    </div>
+  );
+}
+
+// ============================================
   return (
     <button
       onClick={onClick}
@@ -806,6 +1009,11 @@ export default function Home() {
   const [fetchMeta, setFetchMeta] = useState(null);
   const [sentUrls, setSentUrls] = useState({});
   const [hidePublished, setHidePublished] = useState(false);
+  const [golfImages, setGolfImages] = useState(function () {
+    return [0, 1, 2].map(function (i) {
+      return generateGolfSVG(Date.now() + i * 3333).svg;
+    });
+  });
 
   // Load sent URLs from localStorage on mount
   useEffect(function () {
@@ -986,7 +1194,7 @@ export default function Home() {
       });
     var html = previewFormat === "cards"
       ? generateCardsHTML(title, selectedList, 3)
-      : generateNewsletterHTML(title, selectedList);
+      : generateNewsletterHTML(title, selectedList, golfImages);
     var plain = generatePlainText(title, selectedList);
 
     function onCopySuccess() {
@@ -1629,6 +1837,11 @@ export default function Home() {
                     {copied ? "\u2713 Copied!" : "Copy to Clipboard"}
                   </button>
                 </div>
+
+                <GolfImageGenerator
+                  images={golfImages}
+                  setImages={setGolfImages}
+                />
 
                 <div
                   style={{
