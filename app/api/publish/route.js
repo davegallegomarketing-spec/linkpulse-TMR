@@ -41,10 +41,10 @@ export async function POST(request) {
 
     const jsonString = JSON.stringify(editionData);
 
-    // Store the edition in Vercel Blob (private store)
+    // Store the edition in Vercel Blob (public store)
     await put("editions/" + storeKey + ".json", jsonString, {
       contentType: "application/json",
-      access: "private",
+      access: "public",
       addRandomSuffix: false,
       allowOverwrite: true,
     });
@@ -52,7 +52,7 @@ export async function POST(request) {
     // Also store as "latest.json" for easy retrieval
     await put("editions/latest.json", jsonString, {
       contentType: "application/json",
-      access: "private",
+      access: "public",
       addRandomSuffix: false,
       allowOverwrite: true,
     });
