@@ -7,18 +7,18 @@ export default function TickerStation() {
   var _filter = useState(""), filter = _filter[0], setFilter = _filter[1];
   var _sending = useState(null), sending = _sending[0], setSending = _sending[1];
 
+  // T1: headlines from articles
   var _t1 = useState([]), ticker1 = _t1[0], setTicker1 = _t1[1];
-  var _t2 = useState([]), ticker2 = _t2[0], setTicker2 = _t2[1];
-  var _t3 = useState([]), ticker3 = _t3[0], setTicker3 = _t3[1];
+  // T2: one text line — course/weather
+  var _t2 = useState(""), ticker2 = _t2[0], setTicker2 = _t2[1];
+  // T3: one text line — TV schedule
+  var _t3 = useState(""), ticker3 = _t3[0], setTicker3 = _t3[1];
 
-  // Load RSS articles — uses data.articles from the feeds API
+  // Load RSS
   useEffect(function () {
     fetch("/api/feeds?t=" + Date.now())
       .then(function (r) { return r.json(); })
-      .then(function (data) {
-        setArticles(data.articles || []);
-        setLoading(false);
-      })
+      .then(function (data) { setArticles(data.articles || []); setLoading(false); })
       .catch(function () { setLoading(false); });
   }, []);
 
@@ -29,40 +29,26 @@ export default function TickerStation() {
       .then(function (data) {
         if (data && !data.error) {
           if (data.ticker1 && data.ticker1.items) setTicker1(data.ticker1.items);
-          if (data.ticker2 && data.ticker2.items) setTicker2(data.ticker2.items);
-          if (data.ticker3 && data.ticker3.items) setTicker3(data.ticker3.items);
+          if (data.ticker2 && data.ticker2.text) setTicker2(data.ticker2.text);
+          if (data.ticker3 && data.ticker3.text) setTicker3(data.ticker3.text);
         }
       })
       .catch(function () {});
   }, []);
 
-  function addToTicker(tickerNum, article) {
+  function addToTicker1(article) {
     var title = article.title || "";
     var source = article.feedName || "";
-    var item = { text: title, source: source, addedAt: new Date().toISOString() };
-
-    if (tickerNum === 1) {
-      if (!ticker1.some(function (t) { return t.text === title; })) setTicker1(function (p) { return [item].concat(p); });
-    } else if (tickerNum === 2) {
-      if (!ticker2.some(function (t) { return t.text === title; })) setTicker2(function (p) { return [item].concat(p); });
-    } else {
-      if (!ticker3.some(function (t) { return t.text === title; })) setTicker3(function (p) { return [item].concat(p); });
+    if (!ticker1.some(function (t) { return t.text === title; })) {
+      setTicker1(function (p) { return [{ text: title, source: source }].concat(p); });
     }
   }
 
-  function removeFromTicker(tickerNum, index) {
-    if (tickerNum === 1) setTicker1(function (p) { return p.filter(function (_, i) { return i !== index; }); });
-    if (tickerNum === 2) setTicker2(function (p) { return p.filter(function (_, i) { return i !== index; }); });
-    if (tickerNum === 3) setTicker3(function (p) { return p.filter(function (_, i) { return i !== index; }); });
+  function removeFromTicker1(index) {
+    setTicker1(function (p) { return p.filter(function (_, i) { return i !== index; }); });
   }
 
-  function clearTicker(tickerNum) {
-    if (tickerNum === 1) setTicker1([]);
-    if (tickerNum === 2) setTicker2([]);
-    if (tickerNum === 3) setTicker3([]);
-  }
-
-  function broadcastAll() {
+  function broadcast() {
     setSending("all");
     fetch("/api/tickers", {
       method: "POST",
@@ -71,8 +57,8 @@ export default function TickerStation() {
         section: "all",
         data: {
           ticker1: { items: ticker1 },
-          ticker2: { items: ticker2 },
-          ticker3: { items: ticker3 },
+          ticker2: { text: ticker2 },
+          ticker3: { text: ticker3 },
         },
       }),
     })
@@ -82,23 +68,6 @@ export default function TickerStation() {
         setTimeout(function () { setSending(null); }, 3000);
       })
       .catch(function () { setSending("error"); setTimeout(function () { setSending(null); }, 3000); });
-  }
-
-  function broadcastOne(tickerNum) {
-    var sectionName = "ticker" + tickerNum;
-    var items = tickerNum === 1 ? ticker1 : tickerNum === 2 ? ticker2 : ticker3;
-    setSending(sectionName);
-    fetch("/api/tickers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ section: sectionName, data: { items: items } }),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        setSending(res.success ? sectionName + "_done" : sectionName + "_error");
-        setTimeout(function () { setSending(null); }, 3000);
-      })
-      .catch(function () { setSending(sectionName + "_error"); setTimeout(function () { setSending(null); }, 3000); });
   }
 
   function timeAgo(d) {
@@ -117,101 +86,129 @@ export default function TickerStation() {
            (a.feedCategory || "").toLowerCase().indexOf(s) > -1;
   });
 
-  var tickerNames = ["TODAY'S CARD", "COURSE INTEL", "LIVE TV"];
-  var tickerColors = ["#4ade80", "#b8860b", "#ef4444"];
-  var tickerEmojis = ["\uD83C\uDFCC\uFE0F", "\u26F3", "\uD83D\uDCFA"];
-  var tickerArrays = [ticker1, ticker2, ticker3];
-
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #0a0f0a 0%, #0d1117 100%)", fontFamily: "'DM Sans', sans-serif" }}>
       {/* Header */}
       <div style={{ background: "rgba(0,0,0,0.5)", borderBottom: "2px solid #b8860b", padding: "16px 24px", textAlign: "center" }}>
         <div style={{ fontSize: 11, color: "#b8860b", fontWeight: 800, letterSpacing: "0.2em" }}>MULLIGAN REPORT</div>
         <h1 style={{ color: "#fff", fontSize: 24, fontWeight: 900, margin: "4px 0 0" }}>{"\uD83D\uDCE1"} Ticker Broadcast Station</h1>
-        <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>Tap headlines to add to tickers. Broadcast when ready.</p>
+        <p style={{ color: "#6b7280", fontSize: 12, margin: "4px 0 0" }}>T1: tap headlines below. T2 & T3: type one line each. Broadcast.</p>
       </div>
 
       <div style={{ display: "flex", maxWidth: 1400, margin: "0 auto" }}>
         {/* LEFT: Ticker Controls */}
-        <div style={{ width: 360, minWidth: 360, padding: 16, borderRight: "1px solid rgba(255,255,255,0.06)", height: "calc(100vh - 100px)", overflowY: "auto", position: "sticky", top: 0 }}>
+        <div style={{ width: 380, minWidth: 380, padding: 16, borderRight: "1px solid rgba(255,255,255,0.06)", height: "calc(100vh - 100px)", overflowY: "auto", position: "sticky", top: 0 }}>
 
-          <button onClick={broadcastAll} style={{
-            width: "100%", padding: 14, borderRadius: 10, border: "none", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 16,
+          {/* Broadcast button */}
+          <button onClick={broadcast} style={{
+            width: "100%", padding: 14, borderRadius: 10, border: "none", fontWeight: 800, fontSize: 15, cursor: "pointer", marginBottom: 20,
             background: sending === "done" ? "#4ade80" : sending === "error" ? "#ef4444" : "linear-gradient(135deg, #15803d, #059669)",
             color: "#fff", boxShadow: "0 4px 16px rgba(21,128,61,0.3)",
           }}>
-            {sending === "all" ? "\uD83D\uDCE1 Broadcasting..." : sending === "done" ? "\u2705 ALL LIVE!" : sending === "error" ? "\u274C Failed" : "\uD83D\uDCE1 Broadcast All Tickers"}
+            {sending === "all" ? "\uD83D\uDCE1 Broadcasting..." : sending === "done" ? "\u2705 ALL TICKERS LIVE!" : sending === "error" ? "\u274C Failed" : "\uD83D\uDCE1 Broadcast All Tickers"}
           </button>
 
-          {[1, 2, 3].map(function (num) {
-            var items = tickerArrays[num - 1];
-            var color = tickerColors[num - 1];
-            var sKey = "ticker" + num;
-            return (
-              <div key={num} style={{ marginBottom: 14, background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 12, border: "1px solid " + color + "30" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <div>
-                    <span>{tickerEmojis[num - 1]}</span>
-                    <span style={{ color: color, fontSize: 13, fontWeight: 800, marginLeft: 6 }}>{tickerNames[num - 1]}</span>
-                    <span style={{ color: "#6b7280", fontSize: 11, marginLeft: 6 }}>({items.length})</span>
-                  </div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={function () { broadcastOne(num); }} style={{
-                      padding: "3px 10px", borderRadius: 6, border: "none", fontSize: 10, fontWeight: 700, cursor: "pointer",
-                      background: sending === sKey + "_done" ? "#4ade80" : color, color: "#fff",
-                    }}>{sending === sKey ? "..." : sending === sKey + "_done" ? "\u2713" : "\uD83D\uDCE1"}</button>
-                    <button onClick={function () { clearTicker(num); }} style={{
-                      padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)",
-                      background: "transparent", color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                    }}>Clear</button>
-                  </div>
-                </div>
-                {items.length === 0 ? (
-                  <div style={{ color: "#4b5563", fontSize: 11, fontStyle: "italic", padding: "8px 0" }}>No items — tap headlines to add</div>
-                ) : (
-                  <div style={{ maxHeight: 200, overflowY: "auto" }}>
-                    {items.map(function (item, idx) {
-                      return (
-                        <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                          <div style={{ flex: 1, fontSize: 11, color: "#d1d5db", lineHeight: 1.4 }}>
-                            {item.text}
-                            <span style={{ color: "#6b7280", fontSize: 9, marginLeft: 4 }}>{item.source}</span>
-                          </div>
-                          <button onClick={function () { removeFromTicker(num, idx); }} style={{
-                            padding: "2px 6px", border: "none", background: "transparent", color: "#6b7280", cursor: "pointer", fontSize: 12,
-                          }}>{"\u00D7"}</button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-                {items.length > 0 && (
-                  <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(255,255,255,0.03)", borderRadius: 6, overflow: "hidden" }}>
-                    <div style={{ fontSize: 9, color: "#6b7280", marginBottom: 2 }}>PREVIEW:</div>
-                    <div style={{ fontSize: 11, color: color, fontFamily: "Courier, monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {items.map(function (t) { return t.text; }).join("  \u00B7  ")}
-                    </div>
-                  </div>
-                )}
+          {/* T1: TODAY'S CARD — headlines from articles */}
+          <div style={{ marginBottom: 16, background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 14, border: "1px solid #4ade8030" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <div>
+                <span>{"\uD83C\uDFCC\uFE0F"}</span>
+                <span style={{ color: "#4ade80", fontSize: 14, fontWeight: 800, marginLeft: 6 }}>TODAY'S CARD</span>
+                <span style={{ color: "#6b7280", fontSize: 11, marginLeft: 6 }}>({ticker1.length})</span>
               </div>
-            );
-          })}
+              <button onClick={function () { setTicker1([]); }} style={{
+                padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)",
+                background: "transparent", color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer",
+              }}>Clear</button>
+            </div>
+            <div style={{ color: "#4b5563", fontSize: 11, marginBottom: 6 }}>{"\u2190"} Tap article headlines to add here</div>
+            {ticker1.length === 0 ? (
+              <div style={{ color: "#374151", fontSize: 11, fontStyle: "italic", padding: "6px 0" }}>Empty — tap headlines on the right</div>
+            ) : (
+              <div style={{ maxHeight: 220, overflowY: "auto" }}>
+                {ticker1.map(function (item, idx) {
+                  return (
+                    <div key={idx} style={{ display: "flex", alignItems: "flex-start", gap: 6, padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <div style={{ flex: 1, fontSize: 12, color: "#d1d5db", lineHeight: 1.4 }}>
+                        {item.text}
+                        <span style={{ color: "#6b7280", fontSize: 9, marginLeft: 4 }}>{item.source}</span>
+                      </div>
+                      <button onClick={function () { removeFromTicker1(idx); }} style={{
+                        padding: "2px 6px", border: "none", background: "transparent", color: "#6b7280", cursor: "pointer", fontSize: 14,
+                      }}>{"\u00D7"}</button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {ticker1.length > 0 && (
+              <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(74,222,128,0.05)", borderRadius: 6, overflow: "hidden" }}>
+                <div style={{ fontSize: 9, color: "#6b7280" }}>PREVIEW:</div>
+                <div style={{ fontSize: 11, color: "#4ade80", fontFamily: "Courier, monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {ticker1.map(function (t) { return t.text; }).join("  \u00B7  ")}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* T2: COURSE INTEL — one text input */}
+          <div style={{ marginBottom: 16, background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 14, border: "1px solid #b8860b30" }}>
+            <div style={{ marginBottom: 8 }}>
+              <span>{"\u26F3"}</span>
+              <span style={{ color: "#b8860b", fontSize: 14, fontWeight: 800, marginLeft: 6 }}>COURSE INTEL</span>
+            </div>
+            <div style={{ color: "#4b5563", fontSize: 11, marginBottom: 6 }}>Type weather, course conditions, one line</div>
+            <input value={ticker2} onChange={function (e) { setTicker2(e.target.value); }}
+              placeholder="82\u00B0F \u00B7 Wind 12mph SE \u00B7 15% rain \u00B7 Stimp 13.5 \u00B7 Firm and fast"
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid rgba(184,134,11,0.2)", background: "rgba(184,134,11,0.05)",
+                color: "#e5e7eb", fontSize: 13, fontFamily: "Courier, monospace", outline: "none",
+              }} />
+            {ticker2 && (
+              <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(184,134,11,0.05)", borderRadius: 6 }}>
+                <div style={{ fontSize: 9, color: "#6b7280" }}>PREVIEW:</div>
+                <div style={{ fontSize: 11, color: "#b8860b", fontFamily: "Courier, monospace" }}>{ticker2}</div>
+              </div>
+            )}
+          </div>
+
+          {/* T3: LIVE TV — one text input */}
+          <div style={{ marginBottom: 16, background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 14, border: "1px solid #ef444430" }}>
+            <div style={{ marginBottom: 8 }}>
+              <span>{"\uD83D\uDCFA"}</span>
+              <span style={{ color: "#ef4444", fontSize: 14, fontWeight: 800, marginLeft: 6 }}>LIVE TV</span>
+            </div>
+            <div style={{ color: "#4b5563", fontSize: 11, marginBottom: 6 }}>Type TV schedule, one line (update weekly)</div>
+            <input value={ticker3} onChange={function (e) { setTicker3(e.target.value); }}
+              placeholder="Thu-Fri: Golf Ch. 2-6pm \u00B7 Sat-Sun: CBS 3-6pm \u00B7 ESPN+ all day"
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: "1px solid rgba(239,68,68,0.2)", background: "rgba(239,68,68,0.05)",
+                color: "#e5e7eb", fontSize: 13, fontFamily: "Courier, monospace", outline: "none",
+              }} />
+            {ticker3 && (
+              <div style={{ marginTop: 8, padding: "6px 10px", background: "rgba(239,68,68,0.05)", borderRadius: 6 }}>
+                <div style={{ fontSize: 9, color: "#6b7280" }}>PREVIEW:</div>
+                <div style={{ fontSize: 11, color: "#ef4444", fontFamily: "Courier, monospace" }}>{ticker3}</div>
+              </div>
+            )}
+          </div>
 
           <div style={{ textAlign: "center", paddingTop: 10 }}>
             <a href="/" style={{ color: "#4ade80", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>{"\u2190"} Back to LinkPulse</a>
           </div>
         </div>
 
-        {/* RIGHT: Article Feed */}
+        {/* RIGHT: Article Feed (for T1 only) */}
         <div style={{ flex: 1, padding: 16 }}>
-          <input value={filter} onChange={function (e) { setFilter(e.target.value); }} placeholder="Search articles..." style={{
-            width: "100%", padding: "10px 14px", borderRadius: 8, marginBottom: 12,
-            border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)",
-            color: "#e5e7eb", fontSize: 14, outline: "none",
-          }} />
-
-          <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 10 }}>
-            {loading ? "Loading feeds..." : filtered.length + " articles from 32 sources"}
+          <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center" }}>
+            <input value={filter} onChange={function (e) { setFilter(e.target.value); }} placeholder="Search articles for Today's Card ticker..." style={{
+              flex: 1, padding: "10px 14px", borderRadius: 8,
+              border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)",
+              color: "#e5e7eb", fontSize: 14, outline: "none",
+            }} />
+            <span style={{ color: "#6b7280", fontSize: 11, whiteSpace: "nowrap" }}>{loading ? "Loading..." : filtered.length + " articles"}</span>
           </div>
 
           {loading ? (
@@ -219,26 +216,32 @@ export default function TickerStation() {
           ) : (
             filtered.slice(0, 100).map(function (a, i) {
               var hasImg = a.image && a.image.length > 10 && a.image.startsWith("http");
+              var alreadyAdded = ticker1.some(function (t) { return t.text === a.title; });
               return (
-                <div key={i} style={{ background: "rgba(0,0,0,0.3)", borderRadius: 12, padding: 14, marginBottom: 8, border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    {hasImg && (
-                      <img src={a.image} style={{ width: 60, height: 45, objectFit: "cover", borderRadius: 6, flexShrink: 0 }}
-                        onError={function (e) { e.target.style.display = "none"; }} alt="" />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ color: "#e5e7eb", fontSize: 13, fontWeight: 600, lineHeight: 1.3, marginBottom: 3 }}>{a.title}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ color: "#6b7280", fontSize: 10 }}>{a.feedName} · {timeAgo(a.pubDate)}</span>
-                        <span style={{ background: "#15803d20", color: "#4ade80", fontSize: 9, padding: "1px 6px", borderRadius: 4, fontWeight: 700 }}>{a.feedCategory}</span>
-                      </div>
+                <div key={i} style={{
+                  display: "flex", gap: 10, alignItems: "center",
+                  background: alreadyAdded ? "rgba(74,222,128,0.05)" : "rgba(0,0,0,0.3)",
+                  borderRadius: 10, padding: "10px 14px", marginBottom: 6,
+                  border: alreadyAdded ? "1px solid rgba(74,222,128,0.2)" : "1px solid rgba(255,255,255,0.06)",
+                  cursor: "pointer", transition: "all 0.15s",
+                }} onClick={function () { if (!alreadyAdded) addToTicker1(a); }}>
+                  {hasImg && (
+                    <img src={a.image} style={{ width: 50, height: 38, objectFit: "cover", borderRadius: 6, flexShrink: 0 }}
+                      onError={function (e) { e.target.style.display = "none"; }} alt="" />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: alreadyAdded ? "#4ade80" : "#e5e7eb", fontSize: 13, fontWeight: 600, lineHeight: 1.3 }}>
+                      {alreadyAdded ? "\u2713 " : ""}{a.title}
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4, flexShrink: 0 }}>
-                      <button onClick={function () { addToTicker(1, a); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #4ade8040", background: "#4ade8015", color: "#4ade80", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{"\u2192"} T1</button>
-                      <button onClick={function () { addToTicker(2, a); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #b8860b40", background: "#b8860b15", color: "#b8860b", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{"\u2192"} T2</button>
-                      <button onClick={function () { addToTicker(3, a); }} style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #ef444440", background: "#ef444415", color: "#ef4444", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{"\u2192"} T3</button>
-                    </div>
+                    <span style={{ color: "#6b7280", fontSize: 10 }}>{a.feedName} · {timeAgo(a.pubDate)}</span>
                   </div>
+                  {!alreadyAdded && (
+                    <div style={{
+                      padding: "6px 12px", borderRadius: 8, background: "#4ade8015",
+                      border: "1px solid #4ade8030", color: "#4ade80", fontSize: 12, fontWeight: 700,
+                      flexShrink: 0, whiteSpace: "nowrap",
+                    }}>+ Add</div>
+                  )}
                 </div>
               );
             })
