@@ -1,4 +1,4 @@
-// /api/tickers/route.js — Stores and serves ticker data for the Mulligan Report
+// /api/tickers/route.js — Stores and serves ticker data
 import { put, list } from "@vercel/blob";
 
 async function fetchBlob(filename) {
@@ -18,7 +18,8 @@ async function fetchBlob(filename) {
 export async function POST(request) {
   try {
     var body = await request.json();
-    var { section, data } = body;
+    var section = body.section;
+    var data = body.data;
 
     if (!section || !data) {
       return new Response(JSON.stringify({ error: "Missing section or data" }), {
@@ -27,24 +28,21 @@ export async function POST(request) {
       });
     }
 
-    // Valid sections: tournament, course, tv, leaderboard, breaking
-    var validSections = ["tournament", "course", "tv", "leaderboard", "breaking"];
-    if (validSections.indexOf(section) === -1) {
-      return new Response(JSON.stringify({ error: "Invalid section. Use: " + validSections.join(", ") }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     // Get existing ticker data
     var existing = await fetchBlob("tickers/current.json") || {};
 
-    // Merge the updated section
-    existing[section] = data;
-    existing.lastUpdated = new Date().toISOString();
-    existing[section + "_updatedAt"] = new Date().toISOString();
+    if (section === "all") {
+      // Broadcast all tickers at once
+      existing.ticker1 = data.ticker1 || existing.ticker1;
+      existing.ticker2 = data.ticker2 || existing.ticker2;
+      existing.ticker3 = data.ticker3 || existing.ticker3;
+    } else {
+      // Broadcast single ticker
+      existing[section] = data;
+    }
 
-    // Save
+    existing.lastUpdated = new Date().toISOString();
+
     await put("tickers/current.json", JSON.stringify(existing), {
       contentType: "application/json",
       access: "public",
@@ -53,11 +51,7 @@ export async function POST(request) {
     });
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        section: section,
-        updatedAt: existing[section + "_updatedAt"],
-      }),
+      JSON.stringify({ success: true, section: section, updatedAt: existing.lastUpdated }),
       {
         status: 200,
         headers: {
@@ -82,7 +76,7 @@ export async function GET() {
 
     if (!data) {
       return new Response(
-        JSON.stringify({ error: "No ticker data yet", hint: "Use the Ticker Broadcast Station to set up tickers" }),
+        JSON.stringify({ error: "No ticker data yet" }),
         {
           status: 200,
           headers: {
