@@ -1,23 +1,24 @@
 // /api/published/route.js — Serves published editions from Vercel Blob
+// No caching — always returns fresh data
 import { list } from "@vercel/blob";
 
 export async function GET(request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const key = searchParams.get("key"); // optional: fetch specific edition
-    const history = searchParams.get("history"); // optional: "true" to list all
+    var url = new URL(request.url);
+    var key = url.searchParams.get("key");
+    var history = url.searchParams.get("history");
 
     if (history === "true") {
-      // List all published editions
-      const { blobs } = await list({ prefix: "editions/", limit: 100 });
+      var result = await list({ prefix: "editions/", limit: 100 });
+      var blobs = result.blobs || [];
 
-      const editions = await Promise.all(
+      var editions = await Promise.all(
         blobs
           .filter(function (b) { return b.pathname !== "editions/latest.json"; })
           .map(async function (b) {
             try {
-              const res = await fetch(b.url);
-              const data = await res.json();
+              var res = await fetch(b.downloadUrl || b.url, { cache: "no-store" });
+              var data = await res.json();
               return {
                 key: data.key,
                 title: data.title,
@@ -30,7 +31,7 @@ export async function GET(request) {
           })
       );
 
-      const filtered = editions.filter(function (e) { return e !== null; })
+      var filtered = editions.filter(function (e) { return e !== null; })
         .sort(function (a, b) { return new Date(b.publishedAt) - new Date(a.publishedAt); });
 
       return new Response(JSON.stringify({ editions: filtered, count: filtered.length }), {
@@ -38,18 +39,21 @@ export async function GET(request) {
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
-          "Cache-Control": "public, max-age=60",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
         },
       });
     }
 
     // Determine which file to fetch
-    const filename = key ? "editions/" + key + ".json" : "editions/latest.json";
+    var filename = key ? "editions/" + key + ".json" : "editions/latest.json";
 
-    // Find the blob by listing with exact prefix
-    const { blobs } = await list({ prefix: filename, limit: 1 });
+    var result2 = await list({ prefix: filename });
+    var blobs2 = result2.blobs || [];
 
-    if (!blobs || blobs.length === 0) {
+    // Find exact pathname match
+    var match = blobs2.find(function (b) { return b.pathname === filename; });
+
+    if (!match) {
       if (key) {
         return new Response(JSON.stringify({ error: "Edition not found", key: key }), {
           status: 404,
@@ -59,7 +63,6 @@ export async function GET(request) {
           },
         });
       }
-      // No latest edition yet
       return new Response(
         JSON.stringify({
           error: "No published edition yet",
@@ -70,15 +73,15 @@ export async function GET(request) {
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
-            "Cache-Control": "public, max-age=60",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
           },
         }
       );
     }
 
-    // Fetch the actual JSON content from the blob URL
-    const blobRes = await fetch(blobs[0].url);
-    const data = await blobRes.json();
+    // Fetch fresh — bypass any CDN cache
+    var blobRes = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
+    var data = await blobRes.json();
 
     return new Response(JSON.stringify(data), {
       status: 200,
@@ -86,7 +89,7 @@ export async function GET(request) {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Cache-Control": "public, max-age=60",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
       },
     });
   } catch (err) {
@@ -100,7 +103,6 @@ export async function GET(request) {
   }
 }
 
-// CORS preflight
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
