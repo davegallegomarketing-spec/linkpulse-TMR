@@ -1,12 +1,16 @@
 // /api/publish/route.js — Stores curated articles in Vercel Blob (persistent)
-// Articles ACCUMULATE — each publish adds to the existing edition for that day
+// Articles ACCUMULATE within the same day. Each new publish adds to existing.
 import { put, list } from "@vercel/blob";
 
-async function getExistingEdition(filename) {
+async function getExistingData(filename) {
   try {
-    const { blobs } = await list({ prefix: filename, limit: 1 });
+    const { blobs } = await list({ prefix: filename });
     if (!blobs || blobs.length === 0) return null;
-    const res = await fetch(blobs[0].url);
+    // Find exact match
+    var match = blobs.find(function (b) { return b.pathname === filename; });
+    if (!match) return null;
+    var res = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
+    if (!res.ok) return null;
     return await res.json();
   } catch (e) {
     return null;
@@ -15,8 +19,10 @@ async function getExistingEdition(filename) {
 
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { articles, edition, title } = body;
+    var body = await request.json();
+    var articles = body.articles;
+    var edition = body.edition;
+    var title = body.title;
 
     if (!articles || !Array.isArray(articles) || articles.length === 0) {
       return new Response(JSON.stringify({ error: "No articles provided" }), {
@@ -25,27 +31,27 @@ export async function POST(request) {
       });
     }
 
-    // Build keys
-    const now = new Date();
-    const dateKey = now.toISOString().split("T")[0];
-    const editionName = edition || "daily";
-    const storeKey = dateKey + "_" + editionName;
-    const filename = "editions/" + storeKey + ".json";
+    var now = new Date();
+    var dateKey = now.toISOString().split("T")[0];
+    var editionName = edition || "daily";
+    var storeKey = dateKey + "_" + editionName;
+    var filename = "editions/" + storeKey + ".json";
 
-    // Get existing edition for today (if any)
-    const existing = await getExistingEdition(filename);
-
-    // Merge: keep existing articles, add new ones (skip duplicates by link)
+    // Get existing edition for today
+    var existing = await getExistingData(filename);
     var existingArticles = (existing && existing.articles) ? existing.articles : [];
-    var existingLinks = {};
-    existingArticles.forEach(function (a) { existingLinks[a.link] = true; });
 
+    // Build lookup of existing links to avoid duplicates
+    var existingLinks = {};
+    existingArticles.forEach(function (a) { if (a.link) existingLinks[a.link] = true; });
+
+    // Process new articles, skip duplicates
     var newArticles = [];
     articles.forEach(function (a) {
       var link = a.link || "";
-      if (!existingLinks[link]) {
+      if (link && !existingLinks[link]) {
         newArticles.push({
-          position: 0, // will be renumbered below
+          position: 0,
           title: a.title || "",
           link: link,
           description: a.description || "",
@@ -53,17 +59,17 @@ export async function POST(request) {
           category: a.feedCategory || a.category || "",
           image: a.image || "",
           pubDate: a.pubDate || "",
+          addedAt: now.toISOString(),
         });
         existingLinks[link] = true;
       }
     });
 
-    // Combined: new articles first (latest picks on top), then existing
+    // New articles on top, existing below
     var allArticles = newArticles.concat(existingArticles);
-    // Renumber positions
     allArticles.forEach(function (a, i) { a.position = i + 1; });
 
-    const editionData = {
+    var editionData = {
       key: storeKey,
       title: title || "Golf Daily — " + now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
       edition: editionName,
@@ -72,9 +78,9 @@ export async function POST(request) {
       articles: allArticles,
     };
 
-    const jsonString = JSON.stringify(editionData);
+    var jsonString = JSON.stringify(editionData);
 
-    // Store the edition
+    // Write to date-specific file
     await put(filename, jsonString, {
       contentType: "application/json",
       access: "public",
@@ -82,7 +88,7 @@ export async function POST(request) {
       allowOverwrite: true,
     });
 
-    // Also store as "latest.json"
+    // Also write to latest.json
     await put("editions/latest.json", jsonString, {
       contentType: "application/json",
       access: "public",
@@ -117,7 +123,6 @@ export async function POST(request) {
   }
 }
 
-// Handle CORS preflight
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
