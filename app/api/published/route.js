@@ -1,6 +1,20 @@
 // /api/published/route.js — Serves published editions from Vercel Blob
-// No caching — always returns fresh data
+// Checks today's date-specific edition first, falls back to latest.json
 import { list } from "@vercel/blob";
+
+async function fetchBlob(filename) {
+  try {
+    var result = await list({ prefix: filename });
+    var blobs = result.blobs || [];
+    var match = blobs.find(function (b) { return b.pathname === filename; });
+    if (!match) return null;
+    var res = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
 
 export async function GET(request) {
   try {
@@ -44,25 +58,43 @@ export async function GET(request) {
       });
     }
 
-    // Determine which file to fetch
-    var filename = key ? "editions/" + key + ".json" : "editions/latest.json";
-
-    var result2 = await list({ prefix: filename });
-    var blobs2 = result2.blobs || [];
-
-    // Find exact pathname match
-    var match = blobs2.find(function (b) { return b.pathname === filename; });
-
-    if (!match) {
-      if (key) {
+    // If a specific key was requested
+    if (key) {
+      var data = await fetchBlob("editions/" + key + ".json");
+      if (!data) {
         return new Response(JSON.stringify({ error: "Edition not found", key: key }), {
           status: 404,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
         });
       }
+      return new Response(JSON.stringify(data), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+      });
+    }
+
+    // DEFAULT: Try today's edition first, then yesterday, then latest.json
+    var now = new Date();
+    var todayKey = now.toISOString().split("T")[0] + "_daily";
+    var data2 = await fetchBlob("editions/" + todayKey + ".json");
+
+    // If no today edition, try yesterday
+    if (!data2) {
+      var yesterday = new Date(now.getTime() - 86400000);
+      var yesterdayKey = yesterday.toISOString().split("T")[0] + "_daily";
+      data2 = await fetchBlob("editions/" + yesterdayKey + ".json");
+    }
+
+    // Last fallback: latest.json
+    if (!data2) {
+      data2 = await fetchBlob("editions/latest.json");
+    }
+
+    if (!data2) {
       return new Response(
         JSON.stringify({
           error: "No published edition yet",
@@ -79,11 +111,7 @@ export async function GET(request) {
       );
     }
 
-    // Fetch fresh — bypass any CDN cache
-    var blobRes = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
-    var data = await blobRes.json();
-
-    return new Response(JSON.stringify(data), {
+    return new Response(JSON.stringify(data2), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
@@ -95,10 +123,7 @@ export async function GET(request) {
   } catch (err) {
     return new Response(JSON.stringify({ error: "Read failed: " + err.message }), {
       status: 500,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
     });
   }
 }
