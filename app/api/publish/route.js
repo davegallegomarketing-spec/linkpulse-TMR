@@ -4,15 +4,33 @@ import { put, list } from "@vercel/blob";
 
 async function getExistingData(filename) {
   try {
-    const { blobs } = await list({ prefix: filename });
-    if (!blobs || blobs.length === 0) return null;
-    // Find exact match
-    var match = blobs.find(function (b) { return b.pathname === filename; });
-    if (!match) return null;
-    var res = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
-    if (!res.ok) return null;
+    // Use the folder prefix to list, then match by filename ending
+    var folderPrefix = filename.substring(0, filename.lastIndexOf("/") + 1);
+    var baseName = filename.substring(filename.lastIndexOf("/") + 1);
+    var result = await list({ prefix: folderPrefix });
+    var blobs = (result && result.blobs) || [];
+    if (blobs.length === 0) {
+      console.log("[publish] No blobs found with prefix:", folderPrefix);
+      return null;
+    }
+    // Match by exact pathname OR by ending with the base filename
+    var match = blobs.find(function (b) {
+      return b.pathname === filename || b.pathname.endsWith(baseName);
+    });
+    if (!match) {
+      console.log("[publish] No exact match for:", filename, "among", blobs.length, "blobs");
+      return null;
+    }
+    var url = match.downloadUrl || match.url;
+    console.log("[publish] Found existing edition at:", url);
+    var res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      console.log("[publish] Fetch failed for existing edition:", res.status);
+      return null;
+    }
     return await res.json();
   } catch (e) {
+    console.error("[publish] Error reading existing data:", e.message);
     return null;
   }
 }
@@ -78,6 +96,8 @@ export async function POST(request) {
       articles: allArticles,
     };
 
+    console.log("[publish] Saving:", newArticles.length, "new +", existingArticles.length, "existing =", allArticles.length, "total");
+
     var jsonString = JSON.stringify(editionData);
 
     // Write to date-specific file
@@ -100,6 +120,8 @@ export async function POST(request) {
       JSON.stringify({
         success: true,
         key: storeKey,
+        merged: existingArticles.length > 0,
+        existingArticles: existingArticles.length,
         newArticles: newArticles.length,
         totalArticles: allArticles.length,
         publishedAt: editionData.publishedAt,
