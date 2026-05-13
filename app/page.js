@@ -35,31 +35,6 @@ function truncate(s, n) {
   return c.length > n ? c.slice(0, n) + "\u2026" : c;
 }
 
-function generateNewsletterHTML(title, articles) {
-  var h = '<h2 style="font-family:Georgia,serif;color:#1a1a1a;border-bottom:2px solid #15803d;padding-bottom:8px;">' + title + "</h2>\n";
-  var b = articles.map(function (a, i) {
-    var img = "";
-    if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
-      img = '<a href="' + a.link + '" style="display:block;margin:0 0 10px;"><img src="' + a.image + '" alt="" style="width:100%;max-width:600px;height:auto;border-radius:8px;display:block;" /></a>\n<p style="margin:0 0 8px;color:#bbb;font-size:10px;font-style:italic;">Photo: ' + a.feedName + "</p>\n";
-    }
-    return '<div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e5e5;">\n<h3 style="margin:0 0 6px;font-family:Georgia,serif;"><a href="' + a.link + '" style="color:#15803d;text-decoration:none;">' + (i + 1) + ". " + a.title + "</a></h3>\n" + img + '<p style="margin:0 0 8px;color:#666;font-size:14px;">' + truncate(a.description, 160) + '</p>\n<a href="' + a.link + '" style="color:#15803d;font-size:13px;text-decoration:none;font-weight:bold;">Read full article \u2192</a>\n<span style="color:#999;font-size:12px;margin-left:12px;">' + a.feedName + " \u00B7 " + formatDate(a.pubDate) + "</span>\n</div>";
-  }).join("\n");
-  return h + b;
-}
-
-function generatePlainText(title, articles) {
-  var l = [title, "=".repeat(title.length), ""];
-  articles.forEach(function (a, i) {
-    l.push((i + 1) + ". " + a.title);
-    l.push("   " + truncate(a.description, 130));
-    l.push("   " + a.link);
-    l.push("   \u2014 " + a.feedName + " \u00B7 " + formatDate(a.pubDate));
-    l.push("");
-  });
-  l.push("---"); l.push("Curated with LinkPulse Golf");
-  return l.join("\n");
-}
-
 function detectTrending(articles) {
   if (!articles || articles.length === 0) return {};
   var breakingWords = { "wins": 2, "won": 2, "victory": 2, "champion": 2, "breaks record": 4, "new record": 4, "injury": 3, "withdraws": 4, "withdrawn": 4, "suspended": 4, "banned": 4, "disqualified": 4, "fired": 4, "retires": 4, "retirement": 4, "ace": 2, "hole-in-one": 3, "albatross": 4, "playoff": 2, "controversial": 2 };
@@ -106,8 +81,10 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
   var domain = "", urlPath = "";
   try { var u = new URL(article.link); domain = u.hostname.replace("www.", ""); urlPath = u.pathname.length > 1 ? u.pathname.slice(0, 50) : ""; } catch (e) {}
   var ageH = (Date.now() - new Date(article.pubDate).getTime()) / 3600000;
+  var isSiren = trendScore && trendScore.score >= 20;
   var labels = [];
-  if (trendScore && trendScore.score >= 12) labels.push({ text: "BREAKING", bg: "#dc2626", color: "#fff" });
+  if (isSiren) labels.push({ text: "\uD83D\uDEA8 SIREN", bg: "#dc2626", color: "#fff", siren: true });
+  else if (trendScore && trendScore.score >= 12) labels.push({ text: "BREAKING", bg: "#dc2626", color: "#fff" });
   else if (trendScore && trendScore.score >= 7) labels.push({ text: "TRENDING", bg: "#7c3aed", color: "#fff" });
   else if (trendScore && trendScore.score >= 4) labels.push({ text: "BUZZ", bg: "#0369a1", color: "#fff" });
   if (ageH < 3) labels.push({ text: "NEW", bg: "#dc2626", color: "#fff" });
@@ -118,11 +95,12 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
   return (
     <div onClick={onToggle} style={{
       display: "flex", gap: 12, padding: "14px 16px",
-      background: selected ? "rgba(21,128,61,0.12)" : isSent ? "rgba(251,146,60,0.03)" : "rgba(255,255,255,0.02)",
+      background: selected ? "rgba(21,128,61,0.12)" : isSiren ? "rgba(220,38,38,0.06)" : isSent ? "rgba(251,146,60,0.03)" : "rgba(255,255,255,0.02)",
       borderRadius: 10, cursor: "pointer",
-      border: selected ? "1px solid rgba(74,222,128,0.4)" : isSent ? "1px solid rgba(251,146,60,0.15)" : "1px solid rgba(255,255,255,0.06)",
+      border: selected ? "1px solid rgba(74,222,128,0.4)" : isSiren ? "2px solid #dc2626" : isSent ? "1px solid rgba(251,146,60,0.15)" : "1px solid rgba(255,255,255,0.06)",
       opacity: isSent && !selected ? 0.5 : 1, boxShadow: selected ? "0 0 16px rgba(21,128,61,0.15)" : "none",
       transition: "all 0.15s", alignItems: "flex-start",
+      animation: isSiren ? "sirenPulse 1.4s ease-in-out infinite" : "none",
     }}>
       <div style={{
         width: 22, height: 22, borderRadius: 6, flexShrink: 0, marginTop: 2,
@@ -143,7 +121,7 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
               </span>
               <span style={{ color: "#6b7280", fontSize: 11 }}>{formatDate(article.pubDate)}</span>
               {!isSent && labels.map(function (lb, li) {
-                return <span key={li} style={{ background: lb.bg, color: lb.color, padding: "1px 7px", borderRadius: 3, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>{lb.text}</span>;
+                return <span key={li} style={{ background: lb.bg, color: lb.color, padding: "1px 7px", borderRadius: 3, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", animation: lb.siren ? "sirenBadge 0.9s ease-in-out infinite" : "none" }}>{lb.text}</span>;
               })}
               {isSent && <span style={{ background: "rgba(251,146,60,0.15)", color: "#fb923c", padding: "1px 7px", borderRadius: 3, fontSize: 9, fontWeight: 700, textTransform: "uppercase" }}>Published</span>}
             </div>
@@ -227,61 +205,18 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear }
   );
 }
 
-function CostCalculator() {
-  var _n = useState(10), nl = _n[0], setNl = _n[1];
-  var _l = useState(10), lk = _l[0], setLk = _l[1];
-  var _s = useState(500), sb = _s[0], setSb = _s[1];
-  var pc = sb <= 2500 ? 0 : sb <= 10000 ? 39 : 99;
-  return (
-    <div>
-      <div style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, marginBottom: 20 }}>Cost Breakdown</div>
-      <div style={{ display: "grid", gap: 22 }}>
-        <div><label style={{ color: "#9ca3af", fontSize: 12, display: "block", marginBottom: 6 }}>Newsletters per day</label><input type="range" min="1" max="20" value={nl} onChange={function (e) { setNl(+e.target.value); }} style={{ width: "100%", accentColor: "#15803d" }} /><span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>{nl}</span></div>
-        <div><label style={{ color: "#9ca3af", fontSize: 12, display: "block", marginBottom: 6 }}>Links per newsletter</label><input type="range" min="3" max="20" value={lk} onChange={function (e) { setLk(+e.target.value); }} style={{ width: "100%", accentColor: "#15803d" }} /><span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>{lk}</span></div>
-        <div><label style={{ color: "#9ca3af", fontSize: 12, display: "block", marginBottom: 6 }}>Subscribers</label><input type="range" min="100" max="50000" step="100" value={sb} onChange={function (e) { setSb(+e.target.value); }} style={{ width: "100%", accentColor: "#15803d" }} /><span style={{ color: "#fff", fontSize: 24, fontWeight: 700 }}>{sb.toLocaleString()}</span></div>
-        <div style={{ background: "linear-gradient(135deg, rgba(21,128,61,0.12), rgba(21,128,61,0.03))", borderRadius: 12, padding: 22, border: "1px solid rgba(21,128,61,0.25)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-            <div><div style={{ color: "#6b7280", fontSize: 11, marginBottom: 4 }}>RSS Feeds</div><div style={{ color: "#4ade80", fontSize: 20, fontWeight: 700 }}>FREE</div></div>
-            <div><div style={{ color: "#6b7280", fontSize: 11, marginBottom: 4 }}>Vercel</div><div style={{ color: "#4ade80", fontSize: 20, fontWeight: 700 }}>FREE</div></div>
-            <div><div style={{ color: "#6b7280", fontSize: 11, marginBottom: 4 }}>Platform</div><div style={{ color: pc === 0 ? "#4ade80" : "#fbbf24", fontSize: 20, fontWeight: 700 }}>{pc === 0 ? "FREE" : "$" + pc + "/mo"}</div></div>
-          </div>
-          <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(21,128,61,0.2)" }}>
-            <div style={{ color: "#9ca3af", fontSize: 12 }}>Total monthly</div>
-            <div style={{ color: "#fff", fontSize: 32, fontWeight: 800 }}>${pc}<span style={{ fontSize: 14, color: "#6b7280", fontWeight: 400 }}>/month</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// CostCalculator component removed (Costs tab deleted)
+
 
 export default function Home() {
-  var _tab = useState("curate"), tab = _tab[0], setTab = _tab[1];
   var _art = useState([]), articles = _art[0], setArticles = _art[1];
   var _ord = useState([]), orderedSelection = _ord[0], setOrderedSelection = _ord[1];
   var _load = useState(true), loading = _load[0], setLoading = _load[1];
   var _err = useState(null), error = _err[0], setError = _err[1];
-  var _cp = useState(false), copied = _cp[0], setCopied = _cp[1];
-  var _fmt = useState("html"), previewFormat = _fmt[0], setPreviewFormat = _fmt[1];
   var _fcat = useState("All"), filterCategory = _fcat[0], setFilterCategory = _fcat[1];
   var _ftime = useState("all"), filterTime = _ftime[0], setFilterTime = _ftime[1];
   var _imgOnly = useState(false), imagesOnly = _imgOnly[0], setImagesOnly = _imgOnly[1];
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
-  var _sent = useState({}), sentUrls = _sent[0], setSentUrls = _sent[1];
-  var _hide = useState(false), hidePublished = _hide[0], setHidePublished = _hide[1];
-  var _pubMode = useState("both"), publishMode = _pubMode[0], setPublishMode = _pubMode[1];
-  var _publishing = useState(false), publishing = _publishing[0], setPublishing = _publishing[1];
-  var _pubResult = useState(null), pubResult = _pubResult[0], setPubResult = _pubResult[1];
-
-  useEffect(function () { try { var s = localStorage.getItem("linkpulse-sent"); if (s) setSentUrls(JSON.parse(s)); } catch (e) {} }, []);
-  useEffect(function () { try { localStorage.setItem("linkpulse-sent", JSON.stringify(sentUrls)); } catch (e) {} }, [sentUrls]);
-
-  function markAsSent(list) {
-    var u = Object.assign({}, sentUrls);
-    list.forEach(function (a) { u[a.link] = { title: a.title, sentAt: new Date().toISOString(), feedName: a.feedName }; });
-    setSentUrls(u);
-  }
-  function clearHistory() { if (window.confirm("Clear all publish history?")) setSentUrls({}); }
 
   var loadFeeds = useCallback(async function () {
     setLoading(true); setError(null);
@@ -302,13 +237,14 @@ export default function Home() {
   var trendScores = detectTrending(articles);
 
   var filteredArticles = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
-  if (filterTime !== "all" && filterTime !== "trending" && filterTime !== "breaking") {
+  if (filterTime !== "all" && filterTime !== "trending" && filterTime !== "breaking" && filterTime !== "siren") {
     var now = Date.now();
     var maxAge = filterTime === "3h" ? 3 * 3600000 : filterTime === "8h" ? 8 * 3600000 : filterTime === "24h" ? 24 * 3600000 : filterTime === "48h" ? 48 * 3600000 : Infinity;
     filteredArticles = filteredArticles.filter(function (a) { return (now - new Date(a.pubDate).getTime()) < maxAge; });
   }
   if (filterTime === "trending") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).sort(function (a, b) { return ((trendScores[b.link] || {}).score || 0) - ((trendScores[a.link] || {}).score || 0); }); }
   if (filterTime === "breaking") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }); }
+  if (filterTime === "siren") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 20; }).sort(function (a, b) { return ((trendScores[b.link] || {}).score || 0) - ((trendScores[a.link] || {}).score || 0); }); }
   if (imagesOnly) { filteredArticles = filteredArticles.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }); }
 
   var countBase = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
@@ -317,6 +253,7 @@ export default function Home() {
   var countToday = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
   var countTrending = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).length;
   var countBreaking = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }).length;
+  var countSiren = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 20; }).length;
   var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
 
   function toggleArticle(article) {
@@ -328,71 +265,11 @@ export default function Home() {
   function removeFromSelection(article) { setOrderedSelection(orderedSelection.filter(function (a) { return a.link !== article.link; })); }
   function selectTop(n) { var sel = filteredArticles.slice(0, n); setOrderedSelection(sel); }
 
-  function copyNewsletter() {
-    var title = "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    var html = generateNewsletterHTML(title, orderedSelection);
-    var plain = generatePlainText(title, orderedSelection);
-    function onOk() { markAsSent(orderedSelection); setCopied(true); setTimeout(function () { setCopied(false); }, 2000); }
-    if (previewFormat === "text") { navigator.clipboard.writeText(plain).then(onOk); }
-    else {
-      var b1 = new Blob([html], { type: "text/html" }), b2 = new Blob([plain], { type: "text/plain" });
-      navigator.clipboard.write([new ClipboardItem({ "text/html": b1, "text/plain": b2 })]).then(onOk).catch(function () { navigator.clipboard.writeText(html).then(onOk); });
-    }
-  }
-
-  async function publishToWebsite() {
-    var title = "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    var res = await fetch("/api/publish", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ articles: orderedSelection, edition: "daily", title: title }),
-    });
-    if (!res.ok) throw new Error("Publish failed: HTTP " + res.status);
-    return res.json();
-  }
-
-  async function handlePublish() {
-    if (orderedSelection.length === 0) return;
-    setPublishing(true);
-    setPubResult(null);
-    var results = { clipboard: false, website: false, error: null };
-    try {
-      // Copy to clipboard (for newsletter)
-      if (publishMode === "newsletter" || publishMode === "both") {
-        var title = "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-        var html = generateNewsletterHTML(title, orderedSelection);
-        var plain = generatePlainText(title, orderedSelection);
-        try {
-          if (previewFormat === "text") { await navigator.clipboard.writeText(plain); }
-          else {
-            var b1 = new Blob([html], { type: "text/html" }), b2 = new Blob([plain], { type: "text/plain" });
-            try { await navigator.clipboard.write([new ClipboardItem({ "text/html": b1, "text/plain": b2 })]); }
-            catch (e) { await navigator.clipboard.writeText(html); }
-          }
-          results.clipboard = true;
-        } catch (e) { results.clipboard = false; }
-      }
-      // Publish to website
-      if (publishMode === "website" || publishMode === "both") {
-        var pubData = await publishToWebsite();
-        results.website = true;
-        results.pubData = pubData;
-      }
-      // Mark as sent
-      markAsSent(orderedSelection);
-      setPubResult(results);
-    } catch (err) {
-      results.error = err.message;
-      setPubResult(results);
-    }
-    setPublishing(false);
-  }
-
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif", background: "#0a0f0a", color: "#e5e7eb", minHeight: "100vh" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-      <style>{"\n@keyframes spin { to { transform: rotate(360deg); } }\n@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }\n@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }\nbutton { transition: all 0.15s; } button:hover { opacity:0.9; }\n"}</style>
+      <style>{"\n@keyframes spin { to { transform: rotate(360deg); } }\n@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }\n@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }\n@keyframes sirenPulse { 0%,100% { border-color:#dc2626; box-shadow:0 0 0 0 rgba(220,38,38,0.55); } 50% { border-color:#f87171; box-shadow:0 0 0 6px rgba(220,38,38,0); } }\n@keyframes sirenBadge { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.55; transform:scale(1.06); } }\nbutton { transition: all 0.15s; } button:hover { opacity:0.9; }\n"}</style>
 
       {/* HEADER */}
       <div style={{ padding: "24px 24px 0", borderBottom: "1px solid rgba(21,128,61,0.15)" }}>
@@ -410,18 +287,6 @@ export default function Home() {
             {loading && <div style={{ width: 14, height: 14, border: "2px solid #4ade80", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
             {loading ? "Fetching\u2026" : "\u21BB Refresh"}
           </button>
-        </div>
-        <div style={{ display: "flex", gap: 0, marginTop: 16 }}>
-          {["curate", "preview", "costs"].map(function (t) {
-            var label = t === "curate" ? "Curate" : t === "preview" ? "Export" : "Costs";
-            var count = t === "curate" ? (loading ? undefined : articles.length) : t === "preview" ? orderedSelection.length : undefined;
-            return (
-              <button key={t} onClick={function () { setTab(t); }} style={{ padding: "10px 18px", border: "none", borderBottom: tab === t ? "2px solid #15803d" : "2px solid transparent", background: "transparent", color: tab === t ? "#4ade80" : "#6b7280", fontFamily: "'DM Sans', sans-serif", fontSize: 13, fontWeight: tab === t ? 700 : 500, cursor: "pointer", display: "flex", alignItems: "center", gap: 7 }}>
-                {label}
-                {count !== undefined && <span style={{ background: tab === t ? "#15803d" : "#374151", color: "#fff", borderRadius: 10, padding: "1px 7px", fontSize: 10, fontWeight: 600 }}>{count}</span>}
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -445,13 +310,13 @@ export default function Home() {
           )}
 
           {/* CURATE */}
-          {tab === "curate" && !loading && (
+          {!loading && (
             <div>
               {articles.length > 0 && (
                 <div>
                   {/* Time filters */}
                   <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 10, flexWrap: "wrap" }}>
-                    {[{ id: "all", label: "All", count: countBase.length }, { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", c: "#fff" }, { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", c: "#fff" }, { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", c: "#fff" }, { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", c: "#fff" }, { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", c: "#38bdf8" }, { id: "48h", label: "48h" }].map(function (t) {
+                    {[{ id: "all", label: "All", count: countBase.length }, { id: "siren", label: "\uD83D\uDEA8 Siren", count: countSiren, bg: "#dc2626", c: "#fff" }, { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", c: "#fff" }, { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", c: "#fff" }, { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", c: "#fff" }, { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", c: "#fff" }, { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", c: "#38bdf8" }, { id: "48h", label: "48h" }].map(function (t) {
                       var act = filterTime === t.id;
                       return <button key={t.id} onClick={function () { setFilterTime(t.id); }} style={{ padding: "5px 12px", borderRadius: 6, border: act ? "1px solid " + (t.bg || "rgba(21,128,61,0.4)") : "1px solid rgba(255,255,255,0.08)", background: act ? (t.bg || "#15803d") : "transparent", color: act ? (t.c || "#fff") : "#6b7280", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                         {t.label}{t.count !== undefined && <span style={{ background: act ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.08)", padding: "0 5px", borderRadius: 8, fontSize: 9 }}>{t.count}</span>}
@@ -477,18 +342,6 @@ export default function Home() {
                       <button onClick={function () { setOrderedSelection([]); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear</button>
                     </div>
                   </div>
-                  {/* Hide published toggle */}
-                  {Object.keys(sentUrls).length > 0 && (
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, padding: "8px 12px", background: "rgba(251,146,60,0.06)", borderRadius: 8, border: "1px solid rgba(251,146,60,0.12)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div onClick={function () { setHidePublished(!hidePublished); }} style={{ width: 36, height: 20, borderRadius: 10, background: hidePublished ? "#fb923c" : "#374151", position: "relative", cursor: "pointer" }}>
-                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: hidePublished ? 18 : 2, transition: "all 0.2s" }} />
-                        </div>
-                        <span style={{ color: "#fb923c", fontSize: 11, fontWeight: 600 }}>Hide published ({Object.keys(sentUrls).length} sent)</span>
-                      </div>
-                      <button onClick={clearHistory} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#6b7280", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>Clear history</button>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -501,10 +354,10 @@ export default function Home() {
                 </div>
               ) : (
                 <div style={{ display: "grid", gap: 6 }}>
-                  {filteredArticles.filter(function (a) { return !hidePublished || !sentUrls[a.link]; }).map(function (article) {
+                  {filteredArticles.map(function (article) {
                     var sel = isSelected(article);
                     var orderNum = sel ? orderedSelection.findIndex(function (a) { return a.link === article.link; }) + 1 : null;
-                    return <ArticleCard key={article.link} article={article} selected={sel} isSent={!!sentUrls[article.link]} trendScore={trendScores[article.link] || null} orderNum={orderNum} onToggle={function () { toggleArticle(article); }} />;
+                    return <ArticleCard key={article.link} article={article} selected={sel} isSent={false} trendScore={trendScores[article.link] || null} orderNum={orderNum} onToggle={function () { toggleArticle(article); }} />;
                   })}
                 </div>
               )}
@@ -517,130 +370,10 @@ export default function Home() {
               )}
             </div>
           )}
-
-          {/* EXPORT & PUBLISH */}
-          {tab === "preview" && !loading && (
-            <div>
-              {orderedSelection.length === 0 ? (
-                <div style={{ textAlign: "center", padding: 60, color: "#4b5563" }}><div style={{ fontSize: 30, marginBottom: 12 }}>{"\uD83D\uDCED"}</div>No articles selected. Go to Curate to pick stories.</div>
-              ) : (
-                <div>
-                  {/* PUBLISH CONTROLS */}
-                  <div style={{ marginBottom: 20, padding: 18, background: "linear-gradient(135deg, rgba(21,128,61,0.1), rgba(184,134,11,0.06))", borderRadius: 12, border: "1px solid rgba(21,128,61,0.2)" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                      <span style={{ fontSize: 18 }}>{"\uD83D\uDE80"}</span>
-                      <span style={{ color: "#4ade80", fontSize: 14, fontWeight: 800, letterSpacing: "-0.3px" }}>Publish {orderedSelection.length} {orderedSelection.length === 1 ? "story" : "stories"}</span>
-                    </div>
-                    <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-                      {[
-                        { id: "both", label: "\u26F3 Both (Newsletter + Website)", rec: true },
-                        { id: "newsletter", label: "\uD83D\uDCE8 Newsletter Only" },
-                        { id: "website", label: "\uD83C\uDF10 Website Only" },
-                      ].map(function (m) {
-                        var act = publishMode === m.id;
-                        return <button key={m.id} onClick={function () { setPublishMode(m.id); }} style={{
-                          padding: "8px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
-                          background: act ? (m.id === "both" ? "linear-gradient(135deg, #15803d, #b8860b)" : "#15803d") : "rgba(255,255,255,0.05)",
-                          color: act ? "#fff" : "#6b7280",
-                          border: act ? "1px solid rgba(74,222,128,0.4)" : "1px solid rgba(255,255,255,0.08)",
-                        }}>
-                          {m.label}{m.rec && <span style={{ marginLeft: 6, fontSize: 9, background: "rgba(0,0,0,0.2)", padding: "1px 6px", borderRadius: 4 }}>REC</span>}
-                        </button>;
-                      })}
-                    </div>
-                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                      <button onClick={handlePublish} disabled={publishing} style={{
-                        padding: "12px 32px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 14, cursor: publishing ? "default" : "pointer",
-                        background: publishing ? "#374151" : "linear-gradient(135deg, #15803d, #059669)",
-                        color: "#fff", display: "flex", alignItems: "center", gap: 8,
-                        boxShadow: publishing ? "none" : "0 4px 16px rgba(21,128,61,0.3)",
-                      }}>
-                        {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-                        {publishing ? "Publishing\u2026" : "\u26F3 Publish Now"}
-                      </button>
-                      {publishMode !== "website" && (
-                        <span style={{ fontSize: 11, color: "#6b7280" }}>Newsletter HTML will be copied to clipboard</span>
-                      )}
-                    </div>
-                    {/* Publish result feedback */}
-                    {pubResult && (
-                      <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: pubResult.error ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.08)", border: pubResult.error ? "1px solid rgba(239,68,68,0.2)" : "1px solid rgba(74,222,128,0.2)" }}>
-                        {pubResult.error ? (
-                          <div style={{ color: "#f87171", fontSize: 12 }}>{"\u274C"} Error: {pubResult.error}</div>
-                        ) : (
-                          <div>
-                            <div style={{ color: "#4ade80", fontSize: 13, fontWeight: 700, marginBottom: 6 }}>{"\u2705"} Published successfully!</div>
-                            <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#9ca3af" }}>
-                              {pubResult.clipboard && <span>{"\u2713"} Newsletter copied to clipboard</span>}
-                              {pubResult.website && <span>{"\u2713"} Aggregator site updated</span>}
-                            </div>
-                            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                              {pubResult.clipboard && <a href="https://davegallego.substack.com/publish/post" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4ade80", fontWeight: 600 }}>Open Substack &rarr;</a>}
-                              {pubResult.website && <a href="https://mulligan-report-drudge.vercel.app" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#b8860b", fontWeight: 600 }}>View Aggregator &rarr;</a>}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Format toggle + manual copy */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {["html", "text"].map(function (f) {
-                        return <button key={f} onClick={function () { setPreviewFormat(f); }} style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: previewFormat === f ? "#15803d" : "rgba(255,255,255,0.05)", color: previewFormat === f ? "#fff" : "#6b7280", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>{f === "html" ? "HTML (Substack)" : "Plain Text"}</button>;
-                      })}
-                    </div>
-                    <button onClick={copyNewsletter} style={{ padding: "6px 16px", background: copied ? "#4ade80" : "rgba(255,255,255,0.05)", color: copied ? "#fff" : "#6b7280", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, fontWeight: 600, cursor: "pointer", fontSize: 11 }}>{copied ? "\u2713 Copied!" : "Copy Only"}</button>
-                  </div>
-                  <div style={{ background: previewFormat === "html" ? "#fafaf9" : "rgba(255,255,255,0.02)", borderRadius: 12, padding: 24, maxHeight: 500, overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)" }}>
-                    {previewFormat === "html" ? (
-                      <div>
-                        <h2 style={{ fontFamily: "Georgia, serif", color: "#1a1a1a", borderBottom: "2px solid #15803d", paddingBottom: 10, marginTop: 0, fontSize: 20 }}>Golf Daily &mdash; {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</h2>
-                        {orderedSelection.map(function (a, i) {
-                          var hasImg = a.image && a.image.length > 10 && a.image.startsWith("http");
-                          return (
-                            <div key={i} style={{ marginBottom: 20, paddingBottom: 20, borderBottom: i < orderedSelection.length - 1 ? "1px solid #e5e5e5" : "none" }}>
-                              <h3 style={{ margin: "0 0 6px", fontSize: 15, fontFamily: "Georgia, serif" }}>
-                                <a href={a.link} target="_blank" rel="noopener noreferrer" style={{ color: "#15803d", textDecoration: "none" }}>{i + 1}. {a.title}</a>
-                              </h3>
-                              {hasImg && (
-                                <div>
-                                  <img src={a.image} alt="" style={{ width: "100%", maxHeight: 200, objectFit: "cover", borderRadius: 6, marginBottom: 6, display: "block" }} onError={function (e) { e.target.style.display = "none"; }} />
-                                  <p style={{ margin: "0 0 6px", color: "#bbb", fontSize: 10, fontStyle: "italic" }}>Photo: {a.feedName}</p>
-                                </div>
-                              )}
-                              <p style={{ margin: "0 0 8px", color: "#666", fontSize: 13, lineHeight: 1.5 }}>{truncate(a.description, 160)}</p>
-                              <a href={a.link} target="_blank" rel="noopener noreferrer" style={{ color: "#15803d", fontSize: 12, fontWeight: 600, textDecoration: "none" }}>Read full article &rarr;</a>
-                              <span style={{ color: "#999", fontSize: 11, marginLeft: 10 }}>{a.feedName}</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <pre style={{ color: "#d1d5db", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.7 }}>{generatePlainText("Golf Daily \u2014 " + new Date().toLocaleDateString(), orderedSelection)}</pre>
-                    )}
-                  </div>
-                  <div style={{ marginTop: 16, padding: 14, background: "rgba(21,128,61,0.06)", borderRadius: 10, border: "1px solid rgba(21,128,61,0.12)" }}>
-                    <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Workflow</div>
-                    <div style={{ color: "#6b7280", fontSize: 12, lineHeight: 1.8 }}>
-                      <strong style={{ color: "#9ca3af" }}>Step 1:</strong> Select publish mode above (Both is recommended)<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 2:</strong> Click &ldquo;Publish Now&rdquo;<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 3:</strong> Open Substack &rarr; New Post &rarr; Paste (Ctrl+V)<br/>
-                      <strong style={{ color: "#9ca3af" }}>Step 4:</strong> Aggregator site updates automatically
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* COSTS */}
-          {tab === "costs" && !loading && <CostCalculator />}
         </div>
 
         {/* RIGHT: Selection Panel */}
-        {tab === "curate" && !loading && (
+        {!loading && (
           <div style={{ width: 280, flexShrink: 0, borderLeft: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)", minHeight: "calc(100vh - 120px)", position: "sticky", top: 0, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
             <SelectionPanel
               selectedList={orderedSelection}
@@ -649,13 +382,6 @@ export default function Home() {
               onRemove={function (article) { removeFromSelection(article); }}
               onClear={function () { setOrderedSelection([]); }}
             />
-            {orderedSelection.length > 0 && (
-              <div style={{ padding: "12px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <button onClick={function () { setTab("preview"); }} style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #15803d, #059669)", color: "#fff", border: "none", borderRadius: 8, fontWeight: 700, cursor: "pointer", fontSize: 13 }}>
-                  Export {orderedSelection.length} {orderedSelection.length === 1 ? "story" : "stories"} &rarr;
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
