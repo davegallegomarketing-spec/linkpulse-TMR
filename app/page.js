@@ -35,6 +35,16 @@ function truncate(s, n) {
   return c.length > n ? c.slice(0, n) + "\u2026" : c;
 }
 
+// Stable unique identifier for an article. Uses link when it's a real URL;
+// falls back to feedName+title+pubDate so articles with missing or
+// duplicate links (e.g. some Google News items) don't collide.
+function articleId(a) {
+  if (!a) return "";
+  var link = a.link || "";
+  if (link && link !== "#" && link.indexOf("http") === 0) return link;
+  return (a.feedName || "") + "::" + (a.title || "") + "::" + (a.pubDate || "");
+}
+
 function detectTrending(articles) {
   if (!articles || articles.length === 0) return {};
   var breakingWords = { "wins": 2, "won": 2, "victory": 2, "champion": 2, "breaks record": 4, "new record": 4, "injury": 3, "withdraws": 4, "withdrawn": 4, "suspended": 4, "banned": 4, "disqualified": 4, "fired": 4, "retires": 4, "retirement": 4, "ace": 2, "hole-in-one": 3, "albatross": 4, "playoff": 2, "controversial": 2 };
@@ -61,7 +71,7 @@ function detectTrending(articles) {
     if (majorSources[a.feedName]) score += majorSources[a.feedName];
     if (ageH < 2) score *= 1.8; else if (ageH < 6) score *= 1.3; else if (ageH < 24) score *= 0.7; else score *= 0.4;
     score = Math.round(score * 10) / 10;
-    if (score >= 4) scores[a.link] = { score: score, reason: reasons.length > 0 ? reasons[0] : "" };
+    if (score >= 4) scores[articleId(a)] = { score: score, reason: reasons.length > 0 ? reasons[0] : "" };
   });
   return scores;
 }
@@ -181,7 +191,7 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear }
         {selectedList.map(function (article, i) {
           var isOver = overIdx === i;
           return (
-            <div key={article.link}
+            <div key={articleId(article)}
               draggable onDragStart={function () { setDragIdx(i); }} onDragOver={function (e) { e.preventDefault(); setOverIdx(i); }} onDragLeave={function () { setOverIdx(null); }} onDrop={function () { handleDrop(i); }}
               style={{
                 display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "grab",
@@ -250,27 +260,28 @@ export default function Home() {
       return true;
     });
   }
-  if (filterTime === "trending") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).sort(function (a, b) { return ((trendScores[b.link] || {}).score || 0) - ((trendScores[a.link] || {}).score || 0); }); }
-  if (filterTime === "breaking") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }); }
-  if (filterTime === "siren") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 20; }).sort(function (a, b) { return ((trendScores[b.link] || {}).score || 0) - ((trendScores[a.link] || {}).score || 0); }); }
+  if (filterTime === "trending") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 4; }).sort(function (a, b) { return ((trendScores[articleId(b)] || {}).score || 0) - ((trendScores[articleId(a)] || {}).score || 0); }); }
+  if (filterTime === "breaking") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 12; }); }
+  if (filterTime === "siren") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).sort(function (a, b) { return ((trendScores[articleId(b)] || {}).score || 0) - ((trendScores[articleId(a)] || {}).score || 0); }); }
   if (imagesOnly) { filteredArticles = filteredArticles.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }); }
 
   var countBase = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
   var countNew = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
   var countHot = countBase.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
   var countToday = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
-  var countTrending = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).length;
-  var countBreaking = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }).length;
-  var countSiren = countBase.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 20; }).length;
+  var countTrending = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 4; }).length;
+  var countBreaking = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 12; }).length;
+  var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
   var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
 
   function toggleArticle(article) {
-    var exists = orderedSelection.find(function (a) { return a.link === article.link; });
-    if (exists) { setOrderedSelection(orderedSelection.filter(function (a) { return a.link !== article.link; })); }
+    var aid = articleId(article);
+    var exists = orderedSelection.find(function (a) { return articleId(a) === aid; });
+    if (exists) { setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; })); }
     else { setOrderedSelection(orderedSelection.concat([article])); }
   }
-  function isSelected(article) { return !!orderedSelection.find(function (a) { return a.link === article.link; }); }
-  function removeFromSelection(article) { setOrderedSelection(orderedSelection.filter(function (a) { return a.link !== article.link; })); }
+  function isSelected(article) { var aid = articleId(article); return !!orderedSelection.find(function (a) { return articleId(a) === aid; }); }
+  function removeFromSelection(article) { var aid = articleId(article); setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; })); }
   function selectTop(n) { var sel = filteredArticles.slice(0, n); setOrderedSelection(sel); }
 
   // === PUBLISH WORKFLOW ===
@@ -492,8 +503,9 @@ export default function Home() {
                 <div style={{ display: "grid", gap: 6 }}>
                   {filteredArticles.map(function (article) {
                     var sel = isSelected(article);
-                    var orderNum = sel ? orderedSelection.findIndex(function (a) { return a.link === article.link; }) + 1 : null;
-                    return <ArticleCard key={article.link} article={article} selected={sel} isSent={false} trendScore={trendScores[article.link] || null} orderNum={orderNum} onToggle={function () { toggleArticle(article); }} />;
+                    var aid = articleId(article);
+                    var orderNum = sel ? orderedSelection.findIndex(function (a) { return articleId(a) === aid; }) + 1 : null;
+                    return <ArticleCard key={aid} article={article} selected={sel} isSent={false} trendScore={trendScores[aid] || null} orderNum={orderNum} onToggle={function () { toggleArticle(article); }} />;
                   })}
                 </div>
               )}
