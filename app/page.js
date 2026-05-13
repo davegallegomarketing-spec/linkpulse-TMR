@@ -217,6 +217,8 @@ export default function Home() {
   var _ftime = useState("all"), filterTime = _ftime[0], setFilterTime = _ftime[1];
   var _imgOnly = useState(false), imagesOnly = _imgOnly[0], setImagesOnly = _imgOnly[1];
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
+  var _pub = useState(false), publishing = _pub[0], setPublishing = _pub[1];
+  var _pubResult = useState(null), pubResult = _pubResult[0], setPubResult = _pubResult[1];
 
   var loadFeeds = useCallback(async function () {
     setLoading(true); setError(null);
@@ -270,6 +272,71 @@ export default function Home() {
   function isSelected(article) { return !!orderedSelection.find(function (a) { return a.link === article.link; }); }
   function removeFromSelection(article) { setOrderedSelection(orderedSelection.filter(function (a) { return a.link !== article.link; })); }
   function selectTop(n) { var sel = filteredArticles.slice(0, n); setOrderedSelection(sel); }
+
+  // === PUBLISH WORKFLOW ===
+  function buildNewsletterTitle() {
+    return "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
+
+  function generateNewsletterHTML(title, list) {
+    var h = '<h2 style="font-family:Georgia,serif;color:#1a1a1a;border-bottom:2px solid #15803d;padding-bottom:8px;">' + title + "</h2>\n";
+    var b = list.map(function (a, i) {
+      var img = "";
+      if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
+        img = '<a href="' + a.link + '" style="display:block;margin:0 0 10px;"><img src="' + a.image + '" alt="" style="width:100%;max-width:600px;height:auto;border-radius:8px;display:block;" /></a>\n<p style="margin:0 0 8px;color:#bbb;font-size:10px;font-style:italic;">Photo: ' + a.feedName + "</p>\n";
+      }
+      return '<div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e5e5;">\n<h3 style="margin:0 0 6px;font-family:Georgia,serif;"><a href="' + a.link + '" style="color:#15803d;text-decoration:none;">' + (i + 1) + ". " + a.title + "</a></h3>\n" + img + '<p style="margin:0 0 8px;color:#666;font-size:14px;">' + truncate(a.description, 160) + '</p>\n<a href="' + a.link + '" style="color:#15803d;font-size:13px;text-decoration:none;font-weight:bold;">Read full article \u2192</a>\n<span style="color:#999;font-size:12px;margin-left:12px;">' + a.feedName + " \u00B7 " + formatDate(a.pubDate) + "</span>\n</div>";
+    }).join("\n");
+    return h + b;
+  }
+
+  function generatePlainText(title, list) {
+    var l = [title, "=".repeat(title.length), ""];
+    list.forEach(function (a, i) {
+      l.push((i + 1) + ". " + a.title);
+      l.push("   " + truncate(a.description, 130));
+      l.push("   " + a.link);
+      l.push("   \u2014 " + a.feedName + " \u00B7 " + formatDate(a.pubDate));
+      l.push("");
+    });
+    l.push("---"); l.push("Curated with LinkPulse Golf");
+    return l.join("\n");
+  }
+
+  async function handlePublish() {
+    if (orderedSelection.length === 0 || publishing) return;
+    setPublishing(true);
+    setPubResult(null);
+    var results = { clipboard: false, website: false, error: null };
+    try {
+      var title = buildNewsletterTitle();
+      var html = generateNewsletterHTML(title, orderedSelection);
+      var plain = generatePlainText(title, orderedSelection);
+      // 1. Copy newsletter HTML to clipboard (rich + plain fallback)
+      try {
+        var b1 = new Blob([html], { type: "text/html" });
+        var b2 = new Blob([plain], { type: "text/plain" });
+        try { await navigator.clipboard.write([new ClipboardItem({ "text/html": b1, "text/plain": b2 })]); }
+        catch (e) { await navigator.clipboard.writeText(html); }
+        results.clipboard = true;
+      } catch (e) { results.clipboard = false; }
+      // 2. Publish to Mulligan Report site
+      try {
+        var res = await fetch("/api/publish", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ articles: orderedSelection, edition: "daily", title: title }),
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        results.website = true;
+      } catch (e) { results.error = "Site publish failed: " + e.message; }
+      setPubResult(results);
+    } catch (err) {
+      results.error = err.message;
+      setPubResult(results);
+    }
+    setPublishing(false);
+  }
 
 
   return (
@@ -451,6 +518,42 @@ export default function Home() {
               onRemove={function (article) { removeFromSelection(article); }}
               onClear={function () { setOrderedSelection([]); }}
             />
+            {orderedSelection.length > 0 && (
+              <div style={{ padding: "14px 14px 18px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <button onClick={handlePublish} disabled={publishing} style={{
+                  width: "100%", padding: "12px 14px", borderRadius: 10, border: "none",
+                  background: publishing ? "#374151" : (pubResult && !pubResult.error && pubResult.website ? "#15803d" : "linear-gradient(135deg, #15803d, #059669)"),
+                  color: "#fff", fontWeight: 800, fontSize: 14, cursor: publishing ? "default" : "pointer",
+                  boxShadow: publishing ? "none" : "0 4px 14px rgba(21,128,61,0.35)",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
+                  {publishing ? "Publishing\u2026" : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories")}
+                </button>
+                <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
+                  Copies newsletter HTML to clipboard<br/>+ pushes to The Mulligan Report
+                </div>
+                {pubResult && (
+                  <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: pubResult.error ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.08)", border: pubResult.error ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(74,222,128,0.25)" }}>
+                    {pubResult.error ? (
+                      <div style={{ color: "#f87171", fontSize: 11 }}>{"\u274C"} {pubResult.error}</div>
+                    ) : (
+                      <div>
+                        <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{"\u2705"} Published</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: "#9ca3af" }}>
+                          {pubResult.clipboard && <span>{"\u2713"} Newsletter copied to clipboard</span>}
+                          {pubResult.website && <span>{"\u2713"} Live on The Mulligan Report</span>}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+                          {pubResult.clipboard && <a href="https://davegallego.substack.com/publish/post" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4ade80", fontWeight: 600, textDecoration: "none" }}>{"\u2192"} Open Substack to paste</a>}
+                          {pubResult.website && <a href="https://mulligan-report-drudge.vercel.app" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#b8860b", fontWeight: 600, textDecoration: "none" }}>{"\u2192"} View on Mulligan Report</a>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
