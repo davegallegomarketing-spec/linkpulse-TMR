@@ -28,14 +28,26 @@ const GOLF_FEEDS = [
   { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News" },
   { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News" },
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News" },
+  // NEW additions
+  { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
+  { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News" },
+
+  // === LIV GOLF (NEW CATEGORY) ===
+  { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf" },
+  { name: "Flushing It", url: "https://flushingitgolf.com/feed/", category: "LIV Golf" },
 
   // === EQUIPMENT ===
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment" },
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment" },
+  // NEW additions
+  { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment" },
+  { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment" },
 
   // === REVIEWS ===
   { name: "MyGolfSpy", url: "https://feeds.feedburner.com/Mygolfspy", category: "Reviews" },
   { name: "Breaking Eighty", url: "https://breakingeighty.com/feed/", category: "Reviews" },
+  // NEW additions
+  { name: "GolfMagic", url: "https://www.golfmagic.com/feed", category: "Reviews" },
 
   // === INDUSTRY ===
   { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry" },
@@ -43,18 +55,27 @@ const GOLF_FEEDS = [
 
   // === LPGA ===
   { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA" },
+  // NEW additions
+  { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA" },
 
   // === EUROPEAN TOUR ===
   { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour" },
   { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour" },
+  // NEW additions
+  { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour" },
 
   // === COMMUNITY ===
   { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community" },
   { name: "Hooked On Golf Blog", url: "https://hookedongolfblog.com/feed/", category: "Community" },
+  // NEW additions
+  { name: "No Laying Up", url: "https://www.nolayingup.com/blog?format=rss", category: "Community" },
 
   // === LIFESTYLE & TRAVEL ===
   { name: "GolfNow Blog", url: "https://blog.golfnow.com/feed/", category: "Lifestyle" },
   { name: "Cookie Jar Golf", url: "https://cookiejargolf.com/feed/", category: "Travel" },
+  // NEW additions
+  { name: "Top 100 Golf Courses", url: "https://www.top100golfcourses.com/feed", category: "Travel" },
+  { name: "LINKS Magazine", url: "https://www.linksmagazine.com/feed/", category: "Travel" },
 
   // === MENTAL GAME ===
   { name: "Golf State of Mind", url: "https://golfstateofmind.com/feed/", category: "Mental Game" },
@@ -75,12 +96,31 @@ const GOLF_FEEDS = [
 
   // === BETTING ===
   { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting" },
+
+  // === ARCHITECTURE (NEW CATEGORY) ===
+  { name: "The Fried Egg", url: "https://thefriedegg.com/feed/", category: "Architecture" },
+  { name: "Geoff Shackelford", url: "https://geoffshackelford.com/feed/", category: "Architecture" },
+
+  // === STATS (NEW CATEGORY) ===
+  { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats" },
+
+  // === AGGREGATOR / SEARCH-BASED FEEDS ===
+  // These pull from thousands of news sites at once via Google News search.
+  // One entry = headlines from every newspaper/site Google indexes for that query.
+  { name: "Google News: PGA Tour", url: "https://news.google.com/rss/search?q=PGA+Tour&hl=en-US&gl=US&ceid=US:en", category: "Tour News" },
+  { name: "Google News: LIV Golf", url: "https://news.google.com/rss/search?q=LIV+Golf&hl=en-US&gl=US&ceid=US:en", category: "LIV Golf" },
+  // Reddit r/golf: fan discussion, course photos, hot takes — not pro journalism
+  { name: "Reddit r/golf", url: "https://www.reddit.com/r/golf/.rss", category: "Community" },
 ];
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export async function GET() {
+export async function GET(request) {
+  // ?verbose=true returns per-feed diagnostics so we can see which feeds are failing
+  const url = new URL(request.url);
+  const verbose = url.searchParams.get("verbose") === "true";
+
   const results = await Promise.allSettled(
     GOLF_FEEDS.map(async (feed) => {
       try {
@@ -132,7 +172,7 @@ export async function GET() {
           };
         });
       } catch (err) {
-        return { error: feed.name, message: err.message };
+        return { error: feed.name, url: feed.url, category: feed.category, message: err.message };
       }
     })
   );
@@ -152,13 +192,25 @@ export async function GET() {
 
   articles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
 
-  return new Response(JSON.stringify({
+  const payload = {
     articles,
     errors,
     total: articles.length,
     sources: GOLF_FEEDS.length,
     fetchedAt: new Date().toISOString(),
-  }), {
+  };
+
+  // Verbose mode: return diagnostic info so we can see exactly which feeds are broken
+  if (verbose) {
+    const working = GOLF_FEEDS.length - errors.length;
+    payload.diagnostics = {
+      workingFeeds: working,
+      brokenFeeds: errors.length,
+      brokenList: errors.map((e) => ({ name: e.error, category: e.category, url: e.url, error: e.message })),
+    };
+  }
+
+  return new Response(JSON.stringify(payload), {
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
