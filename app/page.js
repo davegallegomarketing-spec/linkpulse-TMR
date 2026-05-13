@@ -358,10 +358,24 @@ export default function Home() {
                   </div>
                   {/* Category filters */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-                    <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {categories.map(function (cat) {
-                        return <button key={cat} onClick={function () { setFilterCategory(cat); }} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: filterCategory === cat ? "#15803d" : "rgba(255,255,255,0.05)", color: filterCategory === cat ? "#fff" : "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                          {cat}{cat !== "All" ? " (" + articles.filter(function (a) { return a.feedCategory === cat; }).length + ")" : ""}
+                        var act = filterCategory === cat;
+                        var cc = cat === "All"
+                          ? { bg: "#15803d", text: "#86efac", icon: "" }
+                          : (CATEGORY_COLORS[cat] || { bg: "#1f2937", text: "#9ca3af", icon: "" });
+                        var count = cat === "All" ? articles.length : articles.filter(function (a) { return a.feedCategory === cat; }).length;
+                        return <button key={cat} onClick={function () { setFilterCategory(cat); }} style={{
+                          padding: "8px 14px", borderRadius: 7,
+                          border: act ? "1px solid " + cc.text : "1px solid " + cc.text + "33",
+                          background: act ? cc.bg : cc.bg + "55",
+                          color: act ? "#fff" : cc.text,
+                          fontSize: 12, fontWeight: 700, cursor: "pointer",
+                          display: "flex", alignItems: "center", gap: 6,
+                        }}>
+                          {cc.icon && <span style={{ fontSize: 13 }}>{cc.icon}</span>}
+                          {cat}
+                          {cat !== "All" && <span style={{ background: act ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: act ? "#fff" : cc.text, padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{count}</span>}
                         </button>;
                       })}
                     </div>
