@@ -239,8 +239,14 @@ export default function Home() {
   var filteredArticles = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
   if (filterTime !== "all" && filterTime !== "trending" && filterTime !== "breaking" && filterTime !== "siren") {
     var now = Date.now();
-    var maxAge = filterTime === "3h" ? 3 * 3600000 : filterTime === "8h" ? 8 * 3600000 : filterTime === "24h" ? 24 * 3600000 : filterTime === "48h" ? 48 * 3600000 : Infinity;
-    filteredArticles = filteredArticles.filter(function (a) { return (now - new Date(a.pubDate).getTime()) < maxAge; });
+    filteredArticles = filteredArticles.filter(function (a) {
+      var age = now - new Date(a.pubDate).getTime();
+      if (filterTime === "3h") return age < 3 * 3600000;
+      if (filterTime === "8h") return age >= 3 * 3600000 && age < 8 * 3600000;
+      if (filterTime === "24h") return age < 24 * 3600000;
+      if (filterTime === "48h") return age < 48 * 3600000;
+      return true;
+    });
   }
   if (filterTime === "trending") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 4; }).sort(function (a, b) { return ((trendScores[b.link] || {}).score || 0) - ((trendScores[a.link] || {}).score || 0); }); }
   if (filterTime === "breaking") { filteredArticles = filteredArticles.filter(function (a) { var ts = trendScores[a.link]; return ts && ts.score >= 12; }); }
