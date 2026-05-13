@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 export default function TickerStation() {
   var _t1 = useState(""), t1 = _t1[0], setT1 = _t1[1];
@@ -11,18 +11,9 @@ export default function TickerStation() {
 
   var prompt = "OUTPUT FORMAT — READ FIRST:\n- Reply with plain text only. Exactly 3 lines. Nothing else.\n- Do NOT create artifacts, code blocks, canvases, HTML, or files.\n- Do NOT write any intro, explanation, summary, or closing remark.\n- Do NOT use markdown, headers, bold, or bullet points.\n- Just 3 raw lines separated by blank lines, ready to copy-paste.\n- Web search is allowed and expected — but the final reply is plain text only.\n- Start your reply with the first ticker item directly. No preamble.\n\nEMOJI STYLING (REQUIRED):\n- Sprinkle relevant emojis throughout each line next to the items they describe.\n- Use them for visual rhythm so the ticker reads like a scoreboard, not a wall of text.\n- Examples by category:\n  • Tournament/trophy: 🏆 🏌️ ⛳\n  • Location: 📍 🌎\n  • Dates/time: 📅 🕐\n  • Money: 💰 💵\n  • Points/stats: 🎯 📊\n  • Round status: 🟢 🔴 ⏱️\n  • Field/players: 👥 👑 ⭐\n  • Betting/odds: 💸 📈\n  • Weather: ☀️ 🌤️ 🌧️ 💨 🌡️\n  • Course: 🌱 🏛️ 🛠️\n  • TV/streaming: 📺 📡 🎙️ 📻\n  • Absences/news: ❌ 🚨 🔥\n- Don't overdo it — roughly one emoji per item or every other item.\n\nTASK:\nSearch the web for this week's current PGA Tour tournament and give me 3 ticker lines for a golf news website. These scroll horizontally like ESPN's bottom line on TV. Each line must be LONG — at least 20 items per line so the ticker fills the full screen before repeating.\n\nRULES:\n- Use · (middle dot) to separate each item\n- Keep each individual item short (2-6 words) but include MANY items per line (20+ items minimum)\n- No labels like \"Line 1\" — just the raw ticker text\n- Search multiple sources to verify every fact. Only real, confirmed data.\n- If a round hasn't started yet, say \"Rd 1 Thursday\" not fake scores. If rounds are in progress or completed, include actual leaderboard scores.\n- ALL CAPS for tournament name and player last names\n\nLINE 1 — TODAY'S CARD (tournament + field + storylines):\nInclude ALL of these: Tournament name · Course name · City, State · Dates · Purse · Winner's share · FedExCup points · Round status · Signature Event or regular · Defending champion or NEW EVENT · Field size · Cut or No Cut · Betting favorite + odds · Top 8-10 players in the field (last names only, ALL CAPS) · Any major storylines (comeback, streak, rivalry) · Days until next major + major name · Current FedExCup leader\nExample: 🏆 CADILLAC CHAMPIONSHIP · ⛳ Trump National Doral · 📍 Miami, FL · 📅 Apr 30-May 3 · 💰 $20M Purse · 💵 $3.6M to Winner · 🎯 700 FedExCup Pts · 🟢 Rd 1 Thursday · ⭐ Signature Event · 🆕 NEW EVENT · 👥 72 Players · ✂️ No Cut · 💸 SCHEFFLER Fav +400 · 👑 SCHEFFLER · YOUNG · ROSE · MORIKAWA · FLEETWOOD · BURNS · MATSUYAMA · GOTTERUP · A. FITZPATRICK · 🔥 First PGA Tour Event at Doral Since 2016 · ⏳ PGA Championship 15 Days · 📈 FedExCup Leader: SCHEFFLER\n\nLINE 2 — COURSE INTEL (course + conditions + absences + history):\nInclude ALL of these: Par · Yardage · Course nickname · Course designer · Renovation info · Signature holes · Course record if known · Key stat (driving accuracy or GIR importance) · Weather forecast (temp, wind, rain chance) for round day · Greens type · ALL notable absences with \"OUT\" · Last winner at this course + year · Any course fun fact\nExample: ⛳ Par 72 · 📏 7,739 Yards · 🐉 Blue Monster · 🛠️ Gil Hanse Renovation · 🏛️ Dick Wilson Design · 🎯 Signature Hole: 18th · 🌱 TifEagle Bermuda Greens · 🎯 Driving Accuracy Key · 🌡️ 84°F · 💨 Wind 12mph SE · 🌧️ 20% Rain · ❌ McILROY OUT · ❌ SCHAUFFELE OUT · ❌ ÅBERG OUT · ❌ M. FITZPATRICK OUT · ❌ MacINTYRE OUT · 🏆 Last Winner: Adam Scott 2016 · 📊 Blue Monster Has Hosted 56 PGA Tour Events\n\nLINE 3 — LIVE TV (full broadcast schedule + streaming + radio):\nInclude ALL of these: Each day's TV schedule with channel + exact times ET · Streaming platform + times · PGA Tour Live details · Radio info (SiriusXM) · International coverage if available · Featured groups/marquee pairings info · Betcast info\nExample: 📺 Thu Apr 30: GOLF CH. 3-7pm ET · 📺 Fri May 1: GOLF CH. 3-7pm ET · 📺 Sat May 2: GOLF CH. 12-3pm + CBS 3-6pm ET · 📺 Sun May 3: GOLF CH. 12-3pm + CBS 3-6pm ET · 📡 ESPN+ from 8:30am Thu-Fri · 📡 ESPN+ from 7:30am Sat-Sun · 🎥 PGA TOUR LIVE: 4 Streams on ESPN+ · ⭐ Featured Group: SCHEFFLER + YOUNG · 📻 SiriusXM PGA Tour Radio: Thu-Fri 1-7pm · 💸 Betcast on ESPN+ All Week · 📺 Paramount+ Simulcast · 🇬🇧 Sky Sports Golf for UK\n\nFINAL OUTPUT: 3 plain-text lines with emojis. No code. No artifacts. No commentary. Start your reply with the first ticker item directly.";
 
-  useEffect(function () {
-    fetch("/api/tickers")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data && !data.error) {
-          if (data.ticker1 && data.ticker1.text) setT1(data.ticker1.text);
-          if (data.ticker2 && data.ticker2.text) setT2(data.ticker2.text);
-          if (data.ticker3 && data.ticker3.text) setT3(data.ticker3.text);
-        }
-      })
-      .catch(function () {});
-  }, []);
+  // Textareas start empty on every page load.
+  // The previous version pre-filled them from /api/tickers — removed so it's
+  // easy to paste fresh lines without clearing old text first.
 
   function broadcast() {
     setSending("all");
