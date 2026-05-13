@@ -315,15 +315,38 @@ export default function Home() {
               {articles.length > 0 && (
                 <div>
                   {/* Time filters */}
-                  <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 10, flexWrap: "wrap" }}>
-                    {[{ id: "all", label: "All", count: countBase.length }, { id: "siren", label: "\uD83D\uDEA8 Siren", count: countSiren, bg: "#dc2626", c: "#fff" }, { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", c: "#fff" }, { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", c: "#fff" }, { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", c: "#fff" }, { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", c: "#fff" }, { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", c: "#38bdf8" }, { id: "48h", label: "48h" }].map(function (t) {
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    {[
+                      { id: "all", label: "All", count: countBase.length, bg: "#15803d", c: "#fff", dimBg: "rgba(21,128,61,0.12)", dimC: "#86efac" },
+                      { id: "siren", label: "\uD83D\uDEA8 Siren", count: countSiren, bg: "#dc2626", c: "#fff", dimBg: "rgba(220,38,38,0.12)", dimC: "#fca5a5" },
+                      { id: "breaking", label: "\u26A1 Breaking", count: countBreaking, bg: "#dc2626", c: "#fff", dimBg: "rgba(220,38,38,0.12)", dimC: "#fca5a5" },
+                      { id: "trending", label: "\u2191 Trending", count: countTrending, bg: "#7c3aed", c: "#fff", dimBg: "rgba(124,58,237,0.15)", dimC: "#c4b5fd" },
+                      { id: "3h", label: "NEW", count: countNew, bg: "#dc2626", c: "#fff", dimBg: "rgba(220,38,38,0.12)", dimC: "#fca5a5" },
+                      { id: "8h", label: "HOT", count: countHot, bg: "#ea580c", c: "#fff", dimBg: "rgba(234,88,12,0.14)", dimC: "#fdba74" },
+                      { id: "24h", label: "Today", count: countToday, bg: "#0c2e3d", c: "#38bdf8", dimBg: "rgba(56,189,248,0.10)", dimC: "#7dd3fc" },
+                      { id: "48h", label: "48h", bg: "#374151", c: "#fff", dimBg: "rgba(255,255,255,0.05)", dimC: "#9ca3af" },
+                    ].map(function (t) {
                       var act = filterTime === t.id;
-                      return <button key={t.id} onClick={function () { setFilterTime(t.id); }} style={{ padding: "5px 12px", borderRadius: 6, border: act ? "1px solid " + (t.bg || "rgba(21,128,61,0.4)") : "1px solid rgba(255,255,255,0.08)", background: act ? (t.bg || "#15803d") : "transparent", color: act ? (t.c || "#fff") : "#6b7280", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                        {t.label}{t.count !== undefined && <span style={{ background: act ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.08)", padding: "0 5px", borderRadius: 8, fontSize: 9 }}>{t.count}</span>}
+                      return <button key={t.id} onClick={function () { setFilterTime(t.id); }} style={{
+                        padding: "8px 14px", borderRadius: 7,
+                        border: act ? "1px solid " + t.bg : "1px solid " + t.dimC + "33",
+                        background: act ? t.bg : t.dimBg,
+                        color: act ? t.c : t.dimC,
+                        fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}>
+                        {t.label}{t.count !== undefined && <span style={{ background: act ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: act ? "#fff" : t.dimC, padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{t.count}</span>}
                       </button>;
                     })}
-                    <button onClick={function () { setImagesOnly(!imagesOnly); }} style={{ padding: "5px 12px", borderRadius: 6, border: imagesOnly ? "1px solid rgba(34,197,94,0.4)" : "1px solid rgba(255,255,255,0.08)", background: imagesOnly ? "rgba(21,128,61,0.2)" : "transparent", color: imagesOnly ? "#4ade80" : "#6b7280", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                      {"\uD83D\uDDBC\uFE0F"} Images <span style={{ background: imagesOnly ? "rgba(0,0,0,0.2)" : "rgba(255,255,255,0.08)", padding: "0 5px", borderRadius: 8, fontSize: 9 }}>{countImg}</span>
+                    <button onClick={function () { setImagesOnly(!imagesOnly); }} style={{
+                      padding: "8px 14px", borderRadius: 7,
+                      border: imagesOnly ? "1px solid #15803d" : "1px solid rgba(74,222,128,0.25)",
+                      background: imagesOnly ? "#15803d" : "rgba(21,128,61,0.10)",
+                      color: imagesOnly ? "#fff" : "#86efac",
+                      fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                      {"\uD83D\uDDBC\uFE0F"} Images <span style={{ background: imagesOnly ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: imagesOnly ? "#fff" : "#86efac", padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{countImg}</span>
                     </button>
                     <span style={{ marginLeft: "auto", color: "#4b5563", fontSize: 10 }}>{fetchMeta ? "Updated " + formatDate(fetchMeta.fetchedAt) : ""}</span>
                   </div>
