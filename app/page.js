@@ -356,28 +356,54 @@ export default function Home() {
                     </button>
                     <span style={{ marginLeft: "auto", color: "#4b5563", fontSize: 10 }}>{fetchMeta ? "Updated " + formatDate(fetchMeta.fetchedAt) : ""}</span>
                   </div>
+                  {/* Separator between time row and topic row */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 10px" }}>
+                    <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }} />
+                    <span style={{ color: "#4b5563", fontSize: 10, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase" }}>Filter by Topic</span>
+                    <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent)" }} />
+                  </div>
+
                   {/* Category filters */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {categories.map(function (cat) {
-                        var act = filterCategory === cat;
-                        var cc = cat === "All"
-                          ? { bg: "#15803d", text: "#86efac", icon: "" }
-                          : (CATEGORY_COLORS[cat] || { bg: "#1f2937", text: "#9ca3af", icon: "" });
-                        var count = cat === "All" ? articles.length : articles.filter(function (a) { return a.feedCategory === cat; }).length;
-                        return <button key={cat} onClick={function () { setFilterCategory(cat); }} style={{
-                          padding: "8px 14px", borderRadius: 7,
-                          border: act ? "1px solid " + cc.text : "1px solid " + cc.text + "33",
-                          background: act ? cc.bg : cc.bg + "55",
-                          color: act ? "#fff" : cc.text,
-                          fontSize: 12, fontWeight: 700, cursor: "pointer",
-                          display: "flex", alignItems: "center", gap: 6,
-                        }}>
-                          {cc.icon && <span style={{ fontSize: 13 }}>{cc.icon}</span>}
-                          {cat}
-                          {cat !== "All" && <span style={{ background: act ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: act ? "#fff" : cc.text, padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{count}</span>}
-                        </button>;
-                      })}
+                      {(function () {
+                        // Group categories into 3 themes — each theme shares one color family
+                        var GROUPS = {
+                          tours: { cats: ["Tour News", "LPGA", "European Tour", "Senior Golf"], bg: "rgba(21,128,61,0.14)", border: "rgba(74,222,128,0.25)", text: "#86efac", activeBg: "#15803d" },
+                          lifestyle: { cats: ["Lifestyle", "Travel", "Fashion", "Community"], bg: "rgba(234,88,12,0.12)", border: "rgba(251,146,60,0.25)", text: "#fdba74", activeBg: "#c2410c" },
+                          gear: { cats: ["Equipment", "Reviews", "Instruction", "Mental Game", "Industry", "Magazine", "Betting"], bg: "rgba(56,189,248,0.10)", border: "rgba(96,165,250,0.22)", text: "#93c5fd", activeBg: "#1e40af" },
+                        };
+                        function groupOf(cat) {
+                          if (cat === "All") return { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.12)", text: "#d1d5db", activeBg: "#15803d" };
+                          var g; Object.keys(GROUPS).forEach(function (k) { if (GROUPS[k].cats.indexOf(cat) !== -1) g = GROUPS[k]; });
+                          return g || { bg: "rgba(255,255,255,0.04)", border: "rgba(255,255,255,0.10)", text: "#9ca3af", activeBg: "#374151" };
+                        }
+                        // Sort categories so they group visually: All first, then tours, lifestyle, gear
+                        var order = ["All"].concat(GROUPS.tours.cats, GROUPS.lifestyle.cats, GROUPS.gear.cats);
+                        var sorted = categories.slice().sort(function (a, b) {
+                          var ai = order.indexOf(a), bi = order.indexOf(b);
+                          if (ai === -1) ai = 999; if (bi === -1) bi = 999;
+                          return ai - bi;
+                        });
+                        return sorted.map(function (cat) {
+                          var act = filterCategory === cat;
+                          var g = groupOf(cat);
+                          var icon = cat === "All" ? "" : ((CATEGORY_COLORS[cat] || {}).icon || "");
+                          var count = cat === "All" ? articles.length : articles.filter(function (a) { return a.feedCategory === cat; }).length;
+                          return <button key={cat} onClick={function () { setFilterCategory(cat); }} style={{
+                            padding: "8px 14px", borderRadius: 7,
+                            border: act ? "1px solid " + g.text : "1px solid " + g.border,
+                            background: act ? g.activeBg : g.bg,
+                            color: act ? "#fff" : g.text,
+                            fontSize: 12, fontWeight: 700, cursor: "pointer",
+                            display: "flex", alignItems: "center", gap: 6,
+                          }}>
+                            {icon && <span style={{ fontSize: 13 }}>{icon}</span>}
+                            {cat}
+                            {cat !== "All" && <span style={{ background: act ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: act ? "#fff" : g.text, padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{count}</span>}
+                          </button>;
+                        });
+                      })()}
                     </div>
                     <div style={{ display: "flex", gap: 5 }}>
                       <button onClick={function () { selectTop(10); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(21,128,61,0.3)", background: "transparent", color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Top 10</button>
