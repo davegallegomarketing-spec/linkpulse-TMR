@@ -114,10 +114,8 @@ const GOLF_FEEDS = [
   { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats" },
 
   // === AGGREGATOR / SEARCH-BASED FEEDS ===
-  // These pull from thousands of news sites at once via Google News search.
-  // One entry = headlines from every newspaper/site Google indexes for that query.
-  { name: "Google News: PGA Tour", url: "https://news.google.com/rss/search?q=PGA+Tour&hl=en-US&gl=US&ceid=US:en", category: "Tour News" },
-  { name: "Google News: LIV Golf", url: "https://news.google.com/rss/search?q=LIV+Golf&hl=en-US&gl=US&ceid=US:en", category: "LIV Golf" },
+  // NOTE: Google News feeds removed per client requirement — all articles must
+  // link directly to the original news source, never through google.com.
   // Reddit r/golf: fan discussion, course photos, hot takes — not pro journalism
   { name: "Reddit r/golf", url: "https://www.reddit.com/r/golf/.rss", category: "Community" },
 ];
