@@ -290,15 +290,52 @@ export default function Home() {
   }
 
   function generateNewsletterHTML(title, list) {
-    var h = '<h2 style="font-family:Georgia,serif;color:#1a1a1a;border-bottom:2px solid #15803d;padding-bottom:8px;">' + title + "</h2>\n";
-    var b = list.map(function (a, i) {
-      var img = "";
-      if (a.image && a.image.length > 10 && a.image.startsWith("http")) {
-        img = '<a href="' + a.link + '" style="display:block;margin:0 0 10px;"><img src="' + a.image + '" alt="" style="width:100%;max-width:600px;height:auto;border-radius:8px;display:block;" /></a>\n<p style="margin:0 0 8px;color:#bbb;font-size:10px;font-style:italic;">Photo: ' + a.feedName + "</p>\n";
-      }
-      return '<div style="margin-bottom:24px;padding-bottom:24px;border-bottom:1px solid #e5e5e5;">\n<h3 style="margin:0 0 6px;font-family:Georgia,serif;"><a href="' + a.link + '" style="color:#15803d;text-decoration:none;">' + (i + 1) + ". " + a.title + "</a></h3>\n" + img + '<p style="margin:0 0 8px;color:#666;font-size:14px;">' + truncate(a.description, 160) + '</p>\n<a href="' + a.link + '" style="color:#15803d;font-size:13px;text-decoration:none;font-weight:bold;">Read full article \u2192</a>\n<span style="color:#999;font-size:12px;margin-left:12px;">' + a.feedName + " \u00B7 " + formatDate(a.pubDate) + "</span>\n</div>";
+    // Email template matching The Mulligan Report design
+    // Table-based + inline styles only = renders consistently in AWeber,
+    // Gmail, Outlook, Apple Mail, Yahoo, etc.
+    var dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    var rows = list.map(function (a, i) {
+      var safeTitle = (a.title || "Untitled").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      var safeLink = a.link || "#";
+      var safeSource = (a.feedName || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return ''
+        + '<tr><td style="padding:18px 0;border-bottom:1px solid #d8d2c2;">'
+        +   '<a href="' + safeLink + '" target="_blank" style="color:#1a3a2a;text-decoration:none;font-family:Georgia,\'Times New Roman\',serif;font-size:20px;font-weight:bold;line-height:1.3;display:block;">'
+        +     (i + 1) + '. ' + safeTitle
+        +   '</a>'
+        +   '<div style="font-family:Georgia,serif;font-size:12px;color:#6b6356;font-style:italic;margin-top:6px;">'
+        +     safeSource + ' &middot; ' + formatDate(a.pubDate)
+        +   '</div>'
+        +   '<a href="' + safeLink + '" target="_blank" style="color:#a63b25;text-decoration:underline;font-family:Georgia,serif;font-size:13px;font-weight:bold;margin-top:8px;display:inline-block;">'
+        +     'READ FULL ARTICLE &rarr;'
+        +   '</a>'
+        + '</td></tr>';
     }).join("\n");
-    return h + b;
+
+    return ''
+      + '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#faf6ec;font-family:Georgia,\'Times New Roman\',serif;">'
+      +   '<tr><td align="center" style="padding:30px 16px;">'
+      +     '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;background-color:#faf6ec;">'
+      // MASTHEAD
+      +       '<tr><td align="center" style="padding:10px 0 4px;">'
+      +         '<div style="font-family:Georgia,\'Times New Roman\',serif;font-weight:bold;color:#1a3a2a;font-size:42px;letter-spacing:1px;text-shadow:2px 2px 0 rgba(0,0,0,0.08);">THE MULLIGAN REPORT</div>'
+      +       '</td></tr>'
+      +       '<tr><td align="center" style="padding:0 0 16px;">'
+      +         '<div style="font-family:Georgia,serif;font-style:italic;font-size:13px;color:#6b6356;">Curated, never automated &middot; ' + dateStr + '</div>'
+      +       '</td></tr>'
+      // GOLD DIVIDER
+      +       '<tr><td style="padding:0;"><div style="height:3px;background-color:#b8860b;border-top:1px solid #d4af37;border-bottom:1px solid #8b6914;"></div></td></tr>'
+      // ARTICLES
+      +       '<tr><td style="padding:10px 0;">'
+      +         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">' + rows + '</table>'
+      +       '</td></tr>'
+      // FOOTER
+      +       '<tr><td align="center" style="padding:24px 0 10px;border-top:2px solid #1a3a2a;">'
+      +         '<div style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#6b6356;">The Mulligan Report &middot; Daily Golf News</div>'
+      +       '</td></tr>'
+      +     '</table>'
+      +   '</td></tr>'
+      + '</table>';
   }
 
   function generatePlainText(title, list) {
@@ -543,7 +580,7 @@ export default function Home() {
                   {publishing ? "Publishing\u2026" : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories")}
                 </button>
                 <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
-                  Copies newsletter HTML to clipboard<br/>+ pushes to The Mulligan Report
+                  Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report
                 </div>
                 {pubResult && (
                   <div style={{ marginTop: 10, padding: 10, borderRadius: 8, background: pubResult.error ? "rgba(239,68,68,0.1)" : "rgba(74,222,128,0.08)", border: pubResult.error ? "1px solid rgba(239,68,68,0.25)" : "1px solid rgba(74,222,128,0.25)" }}>
@@ -553,11 +590,11 @@ export default function Home() {
                       <div>
                         <div style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, marginBottom: 4 }}>{"\u2705"} Published</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: "#9ca3af" }}>
-                          {pubResult.clipboard && <span>{"\u2713"} Newsletter copied to clipboard</span>}
+                          {pubResult.clipboard && <span>{"\u2713"} Newsletter copied \u2014 paste into AWeber</span>}
                           {pubResult.website && <span>{"\u2713"} Live on The Mulligan Report</span>}
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
-                          {pubResult.clipboard && <a href="https://davegallego.substack.com/publish/post" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4ade80", fontWeight: 600, textDecoration: "none" }}>{"\u2192"} Open Substack to paste</a>}
+                          {pubResult.clipboard && <a href="https://www.aweber.com/users/broadcasts/new" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#4ade80", fontWeight: 600, textDecoration: "none" }}>{"\u2192"} Open AWeber to paste</a>}
                           {pubResult.website && <a href="https://mulligan-report-drudge.vercel.app" target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#b8860b", fontWeight: 600, textDecoration: "none" }}>{"\u2192"} View on Mulligan Report</a>}
                         </div>
                       </div>
