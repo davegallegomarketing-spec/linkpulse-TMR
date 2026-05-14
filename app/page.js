@@ -289,53 +289,148 @@ export default function Home() {
     return "Golf Daily \u2014 " + new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   }
 
+  // Escape user-supplied strings before inserting into HTML.
+  function escHtml(s) {
+    if (s == null) return "";
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // Strip HTML tags & decode common entities for a clean text summary.
+  function cleanSummary(s, max) {
+    if (!s) return "";
+    var c = String(s).replace(/<[^>]+>/g, "").replace(/&[^;]+;/g, " ").replace(/\s+/g, " ").trim();
+    if (c.length > max) c = c.slice(0, max).trim() + "\u2026";
+    return c;
+  }
+
   function generateNewsletterHTML(title, list) {
-    // Email template matching The Mulligan Report design
+    // AWeber-ready email template (faithful port of the approved
+    // workstation buildAweberHTML design). Three story tiers:
+    //   - Story 1: full-width hero with image
+    //   - Stories 2–3: side image + text (alternating left/right)
+    //   - Stories 4–8: compact text block with colored side bar
     // Table-based + inline styles only = renders consistently in AWeber,
     // Gmail, Outlook, Apple Mail, Yahoo, etc.
-    var dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-    var rows = list.map(function (a, i) {
-      var safeTitle = (a.title || "Untitled").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      var safeLink = a.link || "#";
-      var safeSource = (a.feedName || "").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      return ''
-        + '<tr><td style="padding:18px 0;border-bottom:1px solid #d8d2c2;">'
-        +   '<a href="' + safeLink + '" target="_blank" style="color:#1a3a2a;text-decoration:none;font-family:Georgia,\'Times New Roman\',serif;font-size:20px;font-weight:bold;line-height:1.3;display:block;">'
-        +     (i + 1) + '. ' + safeTitle
-        +   '</a>'
-        +   '<div style="font-family:Georgia,serif;font-size:12px;color:#6b6356;font-style:italic;margin-top:6px;">'
-        +     safeSource + ' &middot; ' + formatDate(a.pubDate)
-        +   '</div>'
-        +   '<a href="' + safeLink + '" target="_blank" style="color:#a63b25;text-decoration:underline;font-family:Georgia,serif;font-size:13px;font-weight:bold;margin-top:8px;display:inline-block;">'
-        +     'READ FULL ARTICLE &rarr;'
-        +   '</a>'
-        + '</td></tr>';
-    }).join("\n");
+    var months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    var now = new Date();
+    var today = months[now.getMonth()] + " " + now.getDate() + ", " + now.getFullYear();
+    var tmrUrl = "https://mulligan-report-clubhouse.vercel.app";
 
-    return ''
-      + '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#faf6ec;font-family:Georgia,\'Times New Roman\',serif;">'
-      +   '<tr><td align="center" style="padding:30px 16px;">'
-      +     '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="max-width:600px;background-color:#faf6ec;">'
+    // AWeber gets top 8 stories.
+    var aweberArticles = list.slice(0, 8);
+
+    var storyBlocks = "";
+    aweberArticles.forEach(function (a, i) {
+      var headline = escHtml(a.title || "Untitled");
+      var source = escHtml(a.feedName || "The Mulligan Report");
+      var summary = escHtml(cleanSummary(a.description, 200));
+      var storyUrl = a.link && a.link !== "#" ? a.link : tmrUrl;
+      var imgUrl = a.image && a.image.length > 10 && a.image.indexOf("http") === 0 ? a.image : "";
+      var catLabel = escHtml(a.feedCategory || "Pro Tour");
+
+      if (i === 0 && imgUrl) {
+        // Tier 1: full-width hero with image
+        storyBlocks += ''
+          + '<tr><td style="padding:0"><a href="' + storyUrl + '" target="_blank" style="text-decoration:none"><img src="' + imgUrl + '" alt="' + headline + '" width="600" style="width:100%;display:block;max-height:220px;object-fit:cover" /></a></td></tr>'
+          + '<tr><td style="padding:20px 32px 6px;text-align:center">'
+          +   '<a href="' + storyUrl + '" target="_blank" style="text-decoration:none"><div style="font-family:Georgia,serif;font-size:24px;font-weight:700;line-height:1.25;color:#1a1a1a;margin-bottom:8px">' + headline + '</div></a>'
+          +   '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#4a4a4a;margin-bottom:12px">' + summary + '</div>'
+          +   '<table cellpadding="0" cellspacing="0" border="0" align="center"><tr><td style="border:2px solid #2d5a27;border-radius:3px;padding:9px 24px"><a href="' + storyUrl + '" target="_blank" style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:12px;font-weight:700;color:#2d5a27;text-decoration:none;letter-spacing:0.06em">READ NOW</a></td></tr></table>'
+          + '</td></tr>'
+          + '<tr><td style="padding:16px 32px 0"><div style="border-bottom:2px solid #d4c9a8"></div></td></tr>';
+      } else if (i < 3 && imgUrl) {
+        // Tier 2: side image + text (alternates left/right)
+        var imgSide = i % 2 === 1; // 1 = image on right, 0 = image on left
+        var shortSummary = escHtml(cleanSummary(a.description, 120));
+        var imgTd = '<td width="180" valign="top" style="padding:0"><a href="' + storyUrl + '" target="_blank"><img src="' + imgUrl + '" alt="' + headline + '" width="180" style="width:180px;display:block;border-radius:3px" /></a></td>';
+        var textTd = '<td valign="middle" style="padding:0 ' + (imgSide ? '0' : '16px') + ' 0 ' + (imgSide ? '16px' : '0') + '">'
+          + '<a href="' + storyUrl + '" target="_blank" style="text-decoration:none"><div style="font-family:Georgia,serif;font-size:18px;font-weight:700;line-height:1.3;color:#1a1a1a;margin-bottom:6px">' + headline + '</div></a>'
+          + '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#2d5a27;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px">via ' + source + '</div>'
+          + '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#4a4a4a;margin-bottom:10px">' + shortSummary + '</div>'
+          + '<table cellpadding="0" cellspacing="0" border="0"><tr><td style="border:2px solid #2d5a27;border-radius:3px;padding:7px 18px"><a href="' + storyUrl + '" target="_blank" style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#2d5a27;text-decoration:none;letter-spacing:0.06em">READ NOW</a></td></tr></table>'
+          + '</td>';
+        storyBlocks += '<tr><td style="padding:20px 32px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+          + (imgSide ? textTd + imgTd : imgTd + '<td width="16"></td>' + textTd)
+          + '</tr></table></td></tr>'
+          + '<tr><td style="padding:0 32px"><div style="border-bottom:1px solid #d4c9a8"></div></td></tr>';
+      } else {
+        // Tier 3: compact text block with colored side bar (alt green/gold)
+        var barColor = i % 2 === 0 ? "#2d5a27" : "#b8860b";
+        var midSummary = escHtml(cleanSummary(a.description, 160));
+        storyBlocks += '<tr><td style="padding:20px 32px"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+          + '<td width="4" style="background:' + barColor + ';border-radius:2px"></td>'
+          + '<td style="padding-left:16px">'
+          +   '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8a7e6b;margin-bottom:6px">' + catLabel + '</div>'
+          +   '<a href="' + storyUrl + '" target="_blank" style="text-decoration:none"><div style="font-family:Georgia,serif;font-size:18px;font-weight:700;line-height:1.3;color:#1a1a1a;margin-bottom:6px">' + headline + '</div></a>'
+          +   '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:12px;line-height:1.55;color:#4a4a4a;margin-bottom:6px">' + midSummary + '</div>'
+          +   '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#2d5a27;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">via ' + source + '</div>'
+          +   '<table cellpadding="0" cellspacing="0" border="0"><tr><td style="border:2px solid #2d5a27;border-radius:3px;padding:7px 18px"><a href="' + storyUrl + '" target="_blank" style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;font-weight:700;color:#2d5a27;text-decoration:none;letter-spacing:0.06em">READ NOW</a></td></tr></table>'
+          + '</td></tr></table></td></tr>'
+          + '<tr><td style="padding:0 32px"><div style="border-bottom:1px solid #d4c9a8"></div></td></tr>';
+      }
+    });
+
+    return '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>The Mulligan Report</title></head><body style="margin:0;padding:0;background:#e8e3d9;font-family:Trebuchet MS,Helvetica,sans-serif">'
+      + '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#e8e3d9"><tr><td align="center" style="padding:24px 16px">'
+      +   '<table width="600" cellpadding="0" cellspacing="0" border="0" style="background:#ffffff;overflow:hidden;max-width:600px">'
       // MASTHEAD
-      +       '<tr><td align="center" style="padding:10px 0 4px;">'
-      +         '<div style="font-family:Georgia,\'Times New Roman\',serif;font-weight:bold;color:#1a3a2a;font-size:42px;letter-spacing:1px;text-shadow:2px 2px 0 rgba(0,0,0,0.08);">THE MULLIGAN REPORT</div>'
-      +       '</td></tr>'
-      +       '<tr><td align="center" style="padding:0 0 16px;">'
-      +         '<div style="font-family:Georgia,serif;font-style:italic;font-size:13px;color:#6b6356;">Curated, never automated &middot; ' + dateStr + '</div>'
-      +       '</td></tr>'
-      // GOLD DIVIDER
-      +       '<tr><td style="padding:0;"><div style="height:3px;background-color:#b8860b;border-top:1px solid #d4af37;border-bottom:1px solid #8b6914;"></div></td></tr>'
-      // ARTICLES
-      +       '<tr><td style="padding:10px 0;">'
-      +         '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">' + rows + '</table>'
-      +       '</td></tr>'
+      +     '<tr><td style="background:#0f2b1f;padding:28px 32px;text-align:center">'
+      +       '<div style="font-family:Georgia,serif;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:#b8860b;margin-bottom:8px">\u26F3 Your Morning Golf Briefing</div>'
+      +       '<div style="font-family:Georgia,serif;font-size:30px;font-weight:700;color:#f5f0e8;line-height:1.1;letter-spacing:0.02em">The Mulligan Report</div>'
+      +       '<div style="width:60px;height:2px;background:linear-gradient(to right,transparent,#b8860b,transparent);margin:10px auto 8px"></div>'
+      +       '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;color:rgba(245,240,232,0.4);letter-spacing:0.04em">' + today + '</div>'
+      +     '</td></tr>'
+      // TAGLINE STRIP
+      +     '<tr><td style="padding:18px 32px;background:#f5f0e8;border-bottom:1px solid #d4c9a8">'
+      +       '<div style="font-family:Georgia,serif;font-size:14px;font-style:italic;color:#5a5243;line-height:1.6;text-align:center">The stories worth talking about on the first tee.</div>'
+      +     '</td></tr>'
+      // STORIES
+      +     storyBlocks
+      // CTA PANEL
+      +     '<tr><td style="padding:0"><table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0f2b1f"><tr><td align="center" style="padding:24px 32px;text-align:center">'
+      +       '<div style="font-family:Georgia,serif;font-size:18px;font-weight:700;color:#f5f0e8;margin-bottom:5px">Want more stories?</div>'
+      +       '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:13px;color:rgba(245,240,232,0.5);margin-bottom:14px">Fresh golf news every morning \u2014 free, no spam, just the game.</div>'
+      +       '<table cellpadding="0" cellspacing="0" border="0" style="margin:0 auto"><tr><td style="background:#b8860b;border-radius:3px;padding:10px 28px"><a href="' + tmrUrl + '" target="_blank" style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#ffffff;text-decoration:none;letter-spacing:0.06em">VISIT THE MULLIGAN REPORT \u2192</a></td></tr></table>'
+      +     '</td></tr></table></td></tr>'
+      // FORWARD BLOCK
+      +     '<tr><td align="center" style="padding:22px 32px;text-align:center;background:#f5f0e8;border-bottom:1px solid #d4c9a8">'
+      +       '<div style="font-family:Georgia,serif;font-size:16px;font-weight:700;color:#1a1a1a;margin-bottom:4px">Know a golfer who&#39;d love this?</div>'
+      +       '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:12px;color:#6b6459;margin-bottom:14px">Forward this email \u2014 they&#39;ll thank you on the first tee.</div>'
+      +     '</td></tr>'
       // FOOTER
-      +       '<tr><td align="center" style="padding:24px 0 10px;border-top:2px solid #1a3a2a;">'
-      +         '<div style="font-family:Georgia,serif;font-style:italic;font-size:11px;color:#6b6356;">The Mulligan Report &middot; Daily Golf News</div>'
-      +       '</td></tr>'
-      +     '</table>'
-      +   '</td></tr>'
-      + '</table>';
+      +     '<tr><td align="center" style="padding:20px 32px;text-align:center;background:#ffffff;border-top:1px solid #e5ddd0">'
+      +       '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:10px;color:#a09585;line-height:2">'
+      +         '<strong style="color:#1a1a1a">The Mulligan Report</strong> \u00B7 Your daily golf briefing<br>'
+      +         '<a href="' + tmrUrl + '" target="_blank" style="color:#2d5a27;text-decoration:none">themulliganreport.com</a> \u00B7 <a href="{!unsubscribe_url}" style="color:#a09585;text-decoration:underline">Unsubscribe</a>'
+      +       '</div>'
+      +     '</td></tr>'
+      +   '</table>'
+      + '</td></tr></table></body></html>';
+  }
+
+  // Trigger a browser download of the AWeber HTML as a .html file.
+  function downloadAweberHTML() {
+    if (orderedSelection.length === 0) return;
+    var title = buildNewsletterTitle();
+    var html = generateNewsletterHTML(title, orderedSelection);
+    var d = new Date();
+    var pad = function (n) { return n < 10 ? "0" + n : "" + n; };
+    var stamp = d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+    var filename = "mulligan-report-" + stamp + ".html";
+    var blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
 
   function generatePlainText(title, list) {
@@ -578,6 +673,15 @@ export default function Home() {
                 }}>
                   {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
                   {publishing ? "Publishing\u2026" : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories")}
+                </button>
+                <button onClick={downloadAweberHTML} style={{
+                  width: "100%", marginTop: 8, padding: "10px 14px", borderRadius: 10,
+                  border: "1px solid rgba(184,134,11,0.4)",
+                  background: "rgba(184,134,11,0.08)",
+                  color: "#b8860b", fontWeight: 700, fontSize: 13, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                }}>
+                  {"\u2B07 Download AWeber HTML"}
                 </button>
                 <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
                   Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report
