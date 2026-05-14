@@ -31,6 +31,9 @@ const GOLF_FEEDS = [
   // NEW additions
   { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News" },
+  // NEW 2026 additions — major outlets to verify in feeds?verbose=true
+  { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News" },
+  { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News" },
 
   // === LIV GOLF (NEW CATEGORY) ===
   { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf" },
@@ -52,17 +55,23 @@ const GOLF_FEEDS = [
   // === INDUSTRY ===
   { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry" },
   { name: "Golf Australia", url: "https://golf.org.au/feed/", category: "Industry" },
+  // NEW 2026 addition — verify in feeds?verbose=true
+  { name: "Golf Course Industry", url: "https://www.golfcourseindustry.com/rss/", category: "Industry" },
 
   // === LPGA ===
   { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA" },
   // NEW additions
   { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA" },
+  // NEW 2026 addition — verify in feeds?verbose=true
+  { name: "Women & Golf", url: "https://womenandgolf.com/feed", category: "LPGA" },
 
   // === EUROPEAN TOUR ===
   { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour" },
   { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour" },
   // NEW additions
   { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour" },
+  // NEW 2026 addition (national tour news) — verify in feeds?verbose=true
+  { name: "Golf Canada", url: "https://www.golfcanada.ca/feed/", category: "European Tour" },
 
   // === COMMUNITY ===
   { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community" },
