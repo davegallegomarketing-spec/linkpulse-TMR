@@ -11,6 +11,11 @@ const parser = new Parser({
       ["media:content", "media:content"],
       ["media:thumbnail", "media:thumbnail"],
       ["content:encoded", "content:encoded"],
+      // Some feeds (Atom, certain WordPress configs) only expose these:
+      ["dc:date", "dc:date"],
+      ["published", "published"],
+      ["updated", "updated"],
+      ["lastBuildDate", "lastBuildDate"],
     ],
   },
 });
@@ -28,61 +33,50 @@ const GOLF_FEEDS = [
   { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News" },
   { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News" },
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News" },
-  // NEW additions
   { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News" },
-  // NEW 2026 additions — major outlets to verify in feeds?verbose=true
   { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News" },
   { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News" },
 
-  // === LIV GOLF (NEW CATEGORY) ===
+  // === LIV GOLF ===
   { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf" },
   { name: "Flushing It", url: "https://flushingitgolf.com/feed/", category: "LIV Golf" },
 
   // === EQUIPMENT ===
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment" },
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment" },
-  // NEW additions
   { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment" },
   { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment" },
 
   // === REVIEWS ===
   { name: "MyGolfSpy", url: "https://feeds.feedburner.com/Mygolfspy", category: "Reviews" },
   { name: "Breaking Eighty", url: "https://breakingeighty.com/feed/", category: "Reviews" },
-  // NEW additions
   { name: "GolfMagic", url: "https://www.golfmagic.com/feed", category: "Reviews" },
 
   // === INDUSTRY ===
   { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry" },
   { name: "Golf Australia", url: "https://golf.org.au/feed/", category: "Industry" },
-  // NEW 2026 addition — verify in feeds?verbose=true
   { name: "Golf Course Industry", url: "https://www.golfcourseindustry.com/rss/", category: "Industry" },
 
   // === LPGA ===
   { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA" },
-  // NEW additions
   { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA" },
-  // NEW 2026 addition — verify in feeds?verbose=true
   { name: "Women & Golf", url: "https://womenandgolf.com/feed", category: "LPGA" },
 
   // === EUROPEAN TOUR ===
   { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour" },
   { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour" },
-  // NEW additions
   { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour" },
-  // NEW 2026 addition (national tour news) — verify in feeds?verbose=true
   { name: "Golf Canada", url: "https://www.golfcanada.ca/feed/", category: "European Tour" },
 
   // === COMMUNITY ===
   { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community" },
   { name: "Hooked On Golf Blog", url: "https://hookedongolfblog.com/feed/", category: "Community" },
-  // NEW additions
   { name: "No Laying Up", url: "https://www.nolayingup.com/blog?format=rss", category: "Community" },
 
   // === LIFESTYLE & TRAVEL ===
   { name: "GolfNow Blog", url: "https://blog.golfnow.com/feed/", category: "Lifestyle" },
   { name: "Cookie Jar Golf", url: "https://cookiejargolf.com/feed/", category: "Travel" },
-  // NEW additions
   { name: "Top 100 Golf Courses", url: "https://www.top100golfcourses.com/feed", category: "Travel" },
   { name: "LINKS Magazine", url: "https://www.linksmagazine.com/feed/", category: "Travel" },
 
@@ -106,73 +100,109 @@ const GOLF_FEEDS = [
   // === BETTING ===
   { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting" },
 
-  // === ARCHITECTURE (NEW CATEGORY) ===
+  // === ARCHITECTURE ===
   { name: "The Fried Egg", url: "https://thefriedegg.com/feed/", category: "Architecture" },
   { name: "Geoff Shackelford", url: "https://geoffshackelford.com/feed/", category: "Architecture" },
 
-  // === STATS (NEW CATEGORY) ===
+  // === STATS ===
   { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats" },
 
   // === AGGREGATOR / SEARCH-BASED FEEDS ===
   // NOTE: Google News feeds removed per client requirement — all articles must
   // link directly to the original news source, never through google.com.
-  // Reddit r/golf: fan discussion, course photos, hot takes — not pro journalism
   { name: "Reddit r/golf", url: "https://www.reddit.com/r/golf/.rss", category: "Community" },
 ];
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+/**
+ * Robustly turn whatever an RSS item gives us into a valid ISO date string.
+ *
+ * Why this exists: rss-parser populates `item.pubDate` / `item.isoDate` for
+ * well-behaved feeds, but several feeds (Sky Sports, some Atom feeds, certain
+ * WordPress setups) put the date under a different element. When that happens
+ * the old code produced "" -> new Date("") -> Invalid Date, which (a) showed
+ * "Invalid Date" in the UI and (b) returned NaN inside the sort comparator,
+ * corrupting the entire article order.
+ *
+ * Strategy: try every known field, in order of reliability. If a candidate
+ * parses to a real date, return its ISO string. If absolutely nothing works,
+ * return null so the caller can decide what to do (we treat it as "unknown").
+ */
+function normalizeDate(item) {
+  const candidates = [
+    item.isoDate, // rss-parser's own normalized field — most reliable
+    item.pubDate, // standard RSS <pubDate>
+    item.published, // Atom <published>
+    item.updated, // Atom <updated>
+    item["dc:date"], // Dublin Core <dc:date>
+    item.date, // some feeds use a bare <date>
+    item.lastBuildDate, // last-resort feed-level field
+  ];
+
+  for (const c of candidates) {
+    if (!c) continue;
+    const t = new Date(c).getTime();
+    if (!Number.isNaN(t)) {
+      return new Date(t).toISOString();
+    }
+  }
+
+  return null; // genuinely no usable date
+}
+
 export async function GET(request) {
-  // ?verbose=true returns per-feed diagnostics so we can see which feeds are failing
   const url = new URL(request.url);
   const verbose = url.searchParams.get("verbose") === "true";
+
+  // Counts how many articles had no parseable date — surfaced in verbose mode.
+  let undatedCount = 0;
 
   const results = await Promise.allSettled(
     GOLF_FEEDS.map(async (feed) => {
       try {
         const parsed = await parser.parseURL(feed.url);
-        return (parsed.items || []).slice(0, 15).map((item) => {
-          // Extract image from every possible RSS field
+        return (parsed.items || []).slice(0, 20).map((item) => {
+          // --- Image extraction (unchanged) ---
           var image = null;
-
-          // 1. Media content (most common for news feeds)
           if (item["media:content"] && item["media:content"]["$"] && item["media:content"]["$"].url) {
             image = item["media:content"]["$"].url;
           }
-          // 2. Media thumbnail
           if (!image && item["media:thumbnail"] && item["media:thumbnail"]["$"] && item["media:thumbnail"]["$"].url) {
             image = item["media:thumbnail"]["$"].url;
           }
-          // 3. Enclosure (podcast/media style)
           if (!image && item.enclosure && item.enclosure.url) {
             image = item.enclosure.url;
           }
-          // 4. itunes image
           if (!image && item["itunes"] && item["itunes"]["image"]) {
             image = item["itunes"]["image"];
           }
-          // 5. Extract from content HTML (img tag)
           if (!image && item.content) {
             var imgMatch = item.content.match(/<img[^>]+src=["']([^"']+)/);
             if (imgMatch) image = imgMatch[1];
           }
-          // 6. Extract from content:encoded
           if (!image && item["content:encoded"]) {
             var imgMatch2 = item["content:encoded"].match(/<img[^>]+src=["']([^"']+)/);
             if (imgMatch2) image = imgMatch2[1];
           }
-          // 7. Extract from description HTML
           if (!image && item.description) {
             var imgMatch3 = item.description.match(/<img[^>]+src=["']([^"']+)/);
             if (imgMatch3) image = imgMatch3[1];
           }
 
+          // --- Date normalization (the fix) ---
+          const isoDate = normalizeDate(item);
+          if (!isoDate) undatedCount++;
+
           return {
             title: item.title || "Untitled",
             link: item.link || item.guid || "#",
             description: (item.contentSnippet || item.content || "").slice(0, 300),
-            pubDate: item.pubDate || item.isoDate || "",
+            // pubDate is now ALWAYS a valid ISO string, or null. Never "".
+            pubDate: isoDate,
+            // dateKnown lets the UI distinguish "real date" from "we guessed".
+            dateKnown: isoDate !== null,
             feedName: feed.name,
             feedCategory: feed.category,
             image: image,
@@ -197,7 +227,14 @@ export async function GET(request) {
     }
   });
 
-  articles.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+  // --- Safe sort: never returns NaN ---
+  // Articles with a known date sort newest-first. Articles with NO date are
+  // pushed to the bottom (treated as oldest) instead of scrambling the list.
+  articles.sort((a, b) => {
+    const ta = a.pubDate ? new Date(a.pubDate).getTime() : -Infinity;
+    const tb = b.pubDate ? new Date(b.pubDate).getTime() : -Infinity;
+    return tb - ta;
+  });
 
   const payload = {
     articles,
@@ -207,12 +244,12 @@ export async function GET(request) {
     fetchedAt: new Date().toISOString(),
   };
 
-  // Verbose mode: return diagnostic info so we can see exactly which feeds are broken
   if (verbose) {
     const working = GOLF_FEEDS.length - errors.length;
     payload.diagnostics = {
       workingFeeds: working,
       brokenFeeds: errors.length,
+      undatedArticles: undatedCount,
       brokenList: errors.map((e) => ({ name: e.error, category: e.category, url: e.url, error: e.message })),
     };
   }
