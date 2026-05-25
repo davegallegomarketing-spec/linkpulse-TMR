@@ -149,63 +149,99 @@ const GOLF_FEEDS = [
  *   Senior Golf, Mental Game, Fashion, Tour News (default)
  */
 function categorizeArticle(article, feedHintCategory) {
-  const text = ((article.title || "") + " " + (article.description || "")).toLowerCase();
-  const has = (words) => words.some((w) => text.indexOf(w) !== -1);
+  const title = (article.title || "").toLowerCase();
+  const text = (title + " " + (article.description || "")).toLowerCase();
 
-  // --- Instruction: how-to, drills, swing/putting tips ---
+  // Whole-phrase match: a phrase only counts if it sits on word boundaries.
+  // This stops "let " matching "wallet"/"complete", "tip" matching "multiple",
+  // "shorts" matching "short game", "style" matching "lifestyle", etc.
+  const re = (phrase) =>
+    new RegExp("(^|[^a-z])" + phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "([^a-z]|$)", "i");
+  const hasIn = (str, words) => words.some((w) => re(w).test(str));
+  const has = (words) => hasIn(text, words);
+  const titleHas = (words) => hasIn(title, words);
+
+  // --- Senior Golf (checked FIRST so "best driver for seniors" doesn't
+  //     get grabbed by the Equipment rule) ---
+  if (has(["senior golf", "for seniors", "senior golfers", "champions tour", "pga tour champions"])) {
+    return "Senior Golf";
+  }
+
+  // --- Instruction: how-to, drills, swing/putting tips.
+  //     "tip"/"tips" must be a whole word (no "multiple"); "lesson" too. ---
   if (
     has([
-      "how to", "tip", "drill", "lesson", "fix your", "fix my", "improve your",
-      "swing fault", "stop slicing", "stop hitting", "ball striking",
-      "perfect your", "master your", "the secret to", "fundamentals",
-      "backswing", "downswing", "short game", "putting stroke", "green reading",
-      "ball-then-turf", "ball first contact", "release the club",
+      "how to", "tip", "tips", "drill", "drills", "lesson", "lessons",
+      "fix your", "fix my", "improve your", "swing fault", "stop slicing",
+      "stop hitting", "stop duffing", "ball striking", "perfect your",
+      "master your", "the secret to", "fundamentals", "backswing", "downswing",
+      "short game", "putting stroke", "green reading", "ball-then-turf",
+      "ball first contact", "release the club", "common mistakes",
+      "driver mistakes", "swing speed", "low point",
     ])
   ) {
     return "Instruction";
   }
 
-  // --- Mental Game ---
+  // --- Reviews / Equipment: gear, WITB, club tests.
+  //     Checked before Mental Game so a putter review isn't read as "pressure". ---
   if (
     has([
-      "mental game", "mindset", "mental toughness", "pressure", "confidence",
-      "breathwork", "focus", "anxiety", "nerves", "psychology", "stay calm",
+      "review", "reviews", "witb", "what's in the bag", "first look",
+      "tested", "we tried", "buying guide", "gift guide", "best driver",
+      "best drivers", "best iron", "best irons", "best putter", "best putters",
+      "best wedge", "best wedges", "best golf ball", "best golf balls",
+      "best golf shoe", "best golf shoes", "best golf glove", "best golf gloves",
+      "best golf bag", "best fairway", "best game improvement", "best gps",
+      "rangefinder", "gps watch", "club junkie", "shaft review", "driver review",
+      "iron review", "putter review", "wedge review", "special edition",
+    ])
+  ) {
+    if (has(["review", "reviews", "tested", "we tried", "first look", "club junkie"])) {
+      return "Reviews";
+    }
+    return "Equipment";
+  }
+
+  // --- Mental Game (needs a real psychology signal, not bare "pressure") ---
+  if (
+    has([
+      "mental game", "mindset", "mental toughness", "breathwork", "psychology",
+      "stay calm", "anxiety", "mental side", "course management mindset",
     ])
   ) {
     return "Mental Game";
   }
 
-  // --- Reviews / Equipment: gear, WITB, club tests ---
+  // --- Travel: courses, destinations, resorts, architecture.
+  //     "course" alone is far too broad — require a real travel phrase.
+  //     "tee time" lives here only as "booking tee times" (not a penalty
+  //     for a late tee time at a tournament). ---
   if (
     has([
-      "review", "witb", "what's in the bag", "first look", "tested", "we tried",
-      "buying guide", "best driver", "best iron", "best putter", "best wedge",
-      "best golf ball", "best golf shoe", "best golf glove", "best golf bag",
-      "rangefinder", "gps watch", "shaft", "launch monitor", "club junkie",
-    ])
-  ) {
-    // "review/tested/we tried" lean Reviews; pure gear news leans Equipment.
-    if (has(["review", "tested", "we tried", "first look", "club junkie"])) return "Reviews";
-    return "Equipment";
-  }
-
-  // --- Travel: courses, destinations, resorts, architecture ---
-  if (
-    has([
-      "course", "resort", "destination", "links", "getaway", "travel",
-      "architecture", "renovation", "redesign", "clubhouse", "bucket list",
-      "must-play", "course closeup", "tee time", "where to play",
+      "golf course", "course closeup", "course diaries", "resort", "resorts",
+      "destination", "destinations", "getaway", "getaways", "links course",
+      "course architecture", "course design", "feat of architecture",
+      "golf architecture", "renovation", "renovations", "redesign",
+      "clubhouse", "bucket list", "must-play", "where to play",
+      "booking tee times", "golf travel", "golf holiday", "golf trip",
+      "course renovation", "links look", "golf city", "best golf course",
     ])
   ) {
     return "Travel";
   }
 
-  // --- LPGA / Women's golf ---
+  // --- LPGA / Women's golf. "let " removed — use the full phrase.
+  //     Tour-name signals must be in the TITLE (a multi-tour schedule
+  //     roundup mentions "LPGA" in its body but isn't an LPGA story);
+  //     specific women's events/players match anywhere. ---
   if (
+    titleHas(["lpga", "women's golf", "womens golf", "ladies european tour"]) ||
     has([
-      "lpga", "women's golf", "womens golf", "ladies european", "let ",
-      "solheim cup", "curtis cup", "female golfer", "women golfers",
-      "nelly korda", "lottie woad", "lilia vu",
+      "solheim cup", "curtis cup", "women's open", "womens open",
+      "women's amateur", "ladies european tour title", "let title",
+      "nelly korda", "lottie woad", "lilia vu", "leona maguire",
+      "anna huang", "female golfer", "women golfers",
     ])
   ) {
     return "LPGA";
@@ -214,31 +250,28 @@ function categorizeArticle(article, feedHintCategory) {
   // --- Industry: business, course management, the trade ---
   if (
     has([
-      "industry", "superintendent", "greenkeep", "turf", "management company",
-      "troon", "acquisition", "course management", "golf business",
-      "appointed", "hires", "distributor", "webinar",
+      "golf industry", "superintendent", "superintendents", "greenkeeper",
+      "greenkeeping", "turf", "management company", "troon", "acquisition",
+      "course management company", "golf business", "appointed", "new ceo",
+      "distributor", "webinar", "licensing program", "merchandise program",
     ])
   ) {
     return "Industry";
   }
 
-  // --- Senior Golf ---
-  if (has(["senior", "for seniors", "champions tour", "pga tour champions"])) {
-    return "Senior Golf";
-  }
-
-  // --- Fashion ---
+  // --- Fashion: apparel & style. "shorts"/"style" only as whole words,
+  //     and only when it's clearly the subject (title-level signal). ---
   if (
-    has([
-      "fashion", "apparel", "style", "outfit", "collection", "drops its",
-      "footwear", "shorts", "polo", "what they wore", "dimes & crimes",
+    titleHas([
+      "fashion", "apparel", "outfit", "outfits", "footwear", "golf shorts",
+      "polo", "polos", "what they wore", "dimes & crimes", "collection",
+      "capsule", "sneaker", "sneakers", "boutique",
     ])
   ) {
     return "Fashion";
   }
 
   // --- Default: genuine tournament / player news ---
-  // Falls back to the feed hint only if the hint is itself a news category.
   if (feedHintCategory === "European Tour" || feedHintCategory === "Community") {
     return feedHintCategory;
   }
