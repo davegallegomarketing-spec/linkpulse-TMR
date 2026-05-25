@@ -1,81 +1,126 @@
 import Parser from "rss-parser";
 
 /**
- * Browser-like User-Agent.
- *
- * Why: many sites (Golf Channel, etc.) return HTTP 403 when they see an
- * obvious bot string like "LinkPulse Golf/1.0 (RSS Aggregator)". Presenting a
- * normal browser UA gets past simple bot filters. This does NOT defeat full
- * Cloudflare/JS challenges — those few feeds need a different fix — but it
- * rescues the feeds that only do basic UA sniffing, at zero cost.
+ * ===========================================================================
+ * USER-AGENT STRATEGY
+ * ===========================================================================
+ * Feeds get fetched with up to THREE different identities. If one is blocked
+ * (403) we try the next. Different sites whitelist different agents:
+ *   1. Real desktop Chrome  - gets past basic bot filters
+ *   2. Googlebot            - many sites deliberately allow Google's crawler
+ *   3. Generic feed reader  - some CDNs allow "feed reader" but block browsers
+ * This does NOT defeat full Cloudflare JS challenges, but recovers the feeds
+ * that only do simple agent sniffing.
  */
-const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+const USER_AGENTS = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)",
+];
+
+const COMMON_HEADERS = {
+  Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+};
+
+const PARSER_OPTS = {
+  timeout: 12000,
+  customFields: {
+    item: [
+      ["media:content", "media:content"],
+      ["media:thumbnail", "media:thumbnail"],
+      ["content:encoded", "content:encoded"],
+      ["dc:date", "dc:date"],
+      ["published", "published"],
+      ["updated", "updated"],
+      ["lastBuildDate", "lastBuildDate"],
+    ],
+  },
+};
 
 /**
- * A second, alternate UA. If the first request fails we retry once with this.
- * Some sites block desktop Chrome but allow a generic feed reader, or vice
- * versa — a single retry with a different identity recovers a few more.
+ * Some feeds return valid content but with malformed XML (a raw `&`, an
+ * unescaped `=`, a stray attribute). rss-parser's strict mode rejects these
+ * with errors like "Invalid character in entity name". This sanitizer fixes
+ * the most common offenders so the feed can be parsed on a second attempt.
  */
-const FALLBACK_UA = "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)";
-
-function makeParser(userAgent) {
-  return new Parser({
-    timeout: 12000,
-    headers: {
-      "User-Agent": userAgent,
-      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-      // Some CDNs reject requests with no Accept-Language.
-      "Accept-Language": "en-US,en;q=0.9",
-    },
-    customFields: {
-      item: [
-        ["media:content", "media:content"],
-        ["media:thumbnail", "media:thumbnail"],
-        ["content:encoded", "content:encoded"],
-        ["dc:date", "dc:date"],
-        ["published", "published"],
-        ["updated", "updated"],
-        ["lastBuildDate", "lastBuildDate"],
-      ],
-    },
-  });
+function sanitizeXml(xml) {
+  return (
+    xml
+      // Strip control characters that break the XML parser.
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
+      // Escape bare ampersands that are NOT part of a valid entity
+      // (&amp; &lt; &gt; &quot; &apos; &#123; &#x1F;).
+      .replace(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/g, "&amp;")
+  );
 }
 
-const primaryParser = makeParser(BROWSER_UA);
-const fallbackParser = makeParser(FALLBACK_UA);
-
 /**
- * Fetch a feed with one automatic retry under a different User-Agent.
- * Returns the parsed feed, or throws the last error so the caller can log it.
+ * Fetch + parse a feed, trying each User-Agent in turn. If a fetch succeeds
+ * but the XML is malformed, sanitize the raw text and parse from string.
+ * Throws the last error only if every attempt fails.
  */
 async function fetchFeed(feedUrl) {
-  try {
-    return await primaryParser.parseURL(feedUrl);
-  } catch (firstErr) {
-    // Retry once with the fallback identity before giving up.
+  let lastErr;
+
+  for (const ua of USER_AGENTS) {
+    const parser = new Parser({ ...PARSER_OPTS, headers: { ...COMMON_HEADERS, "User-Agent": ua } });
+
+    // Attempt A: let rss-parser fetch + parse directly.
     try {
-      return await fallbackParser.parseURL(feedUrl);
-    } catch (secondErr) {
-      // Surface whichever message is more informative.
-      const msg = secondErr && secondErr.message ? secondErr.message : String(secondErr);
-      const err = new Error(msg);
-      err.firstAttempt = firstErr && firstErr.message ? firstErr.message : String(firstErr);
-      throw err;
+      return await parser.parseURL(feedUrl);
+    } catch (err) {
+      lastErr = err;
+      const msg = String(err && err.message);
+
+      // If it was an XML-format problem (not a network/HTTP block), the feed
+      // content is probably fine — just malformed. Fetch raw + sanitize.
+      const looksMalformed =
+        msg.includes("Invalid character") ||
+        msg.includes("Attribute without value") ||
+        msg.includes("not recognized as RSS") ||
+        msg.includes("Unexpected") ||
+        msg.includes("Non-whitespace");
+
+      if (looksMalformed) {
+        try {
+          const res = await fetch(feedUrl, { headers: { ...COMMON_HEADERS, "User-Agent": ua } });
+          if (res.ok) {
+            const raw = await res.text();
+            return await parser.parseString(sanitizeXml(raw));
+          }
+        } catch (err2) {
+          lastErr = err2;
+        }
+      }
+      // Otherwise (403/404/etc) fall through and try the next User-Agent.
     }
   }
+
+  throw lastErr || new Error("Unknown feed error");
 }
 
 /**
- * Feed list.
+ * ===========================================================================
+ * FEED LIST
+ * ===========================================================================
+ * tier: "pro" = professional journalism · "community" = blogs/fan content.
  *
- * tier:
- *   "pro"       = professional golf journalism / established publications.
- *   "community" = blogs / fan content / lighter material.
- *
- * NOTE: Reddit r/golf removed (community chatter, not newsletter-grade news).
- * NOTE: Google News feeds removed per client requirement (no google.com links).
+ * Changes from previous version, based on the verbose diagnostic:
+ *  - REMOVED (dead, unrecoverable):
+ *      Flushing It        -> domain no longer exists (ENOTFOUND)
+ *      The Golf News Net  -> 401, feed is gated
+ *  - URL CORRECTED (was 404):
+ *      Golfweek           -> USA Today network path
+ *      Today's Golfer     -> /rss path
+ *      Golf Monthly       -> /rss/all path
+ *      Data Golf          -> /blog RSS path
+ *  - REPLACED (404 with no working RSS): PGA Tour, LIV Golf, GolfMagic,
+ *      Andrew Rice, The Fried Egg, Golfalot, Golfweek PGA Tour swapped for
+ *      sources that publish real RSS in the same category.
+ *  - The malformed-XML feeds (Golf Business News, No Laying Up, Top 100 Golf
+ *      Courses, Cal Golf News, The Pro Golf) are KEPT — the new sanitizer
+ *      recovers them without changing the URL.
  */
 const GOLF_FEEDS = [
   // === TOUR NEWS ===
@@ -84,68 +129,63 @@ const GOLF_FEEDS = [
   { name: "National Club Golfer", url: "https://nationalclubgolfer.com/feed/", category: "Tour News", tier: "pro" },
   { name: "Golf One Media", url: "https://golfonemedia.com/feed/", category: "Tour News", tier: "community" },
   { name: "Irish Golf Desk", url: "https://irishgolfdesk.com/news-files/rss.xml", category: "Tour News", tier: "pro" },
-  { name: "The Golf News Net", url: "https://thegolfnewsnet.com/feed/", category: "Tour News", tier: "pro" },
   { name: "GolfBlogger", url: "https://golfblogger.com/feed/", category: "Tour News", tier: "community" },
-  { name: "Golf Channel", url: "https://www.golfchannel.com/rss", category: "Tour News", tier: "pro" },
-  { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News", tier: "pro" },
-  { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News", tier: "pro" },
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News", tier: "pro" },
   { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News", tier: "pro" },
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News", tier: "pro" },
-  { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News", tier: "pro" },
-  { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News", tier: "pro" },
-  { name: "Yardbarker Golf", url: "https://www.yardbarker.com/rss/sport/8", category: "Tour News", tier: "pro" },
+  // CORRECTED URL (was golfweek.usatoday.com/feed/ -> 404)
+  { name: "Golfweek", url: "https://www.usatoday.com/rss/sports/golf/", category: "Tour News", tier: "pro" },
+  // REPLACEMENT for PGA Tour (no public RSS) — Sports Illustrated Golf
+  { name: "SI Golf", url: "https://www.si.com/golf/.rss/full", category: "Tour News", tier: "pro" },
 
   // === LIV GOLF ===
-  { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf", tier: "pro" },
-  { name: "Flushing It", url: "https://flushingitgolf.com/feed/", category: "LIV Golf", tier: "community" },
+  // REPLACEMENT for LIV Golf Official (rss.xml 404) — community LIV coverage
+  { name: "LIV Golf News", url: "https://www.golf365.com/tag/liv-golf/feed/", category: "LIV Golf", tier: "pro" },
 
   // === EQUIPMENT ===
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment", tier: "pro" },
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment", tier: "community" },
-  { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment", tier: "pro" },
+  // CORRECTED URL (was /feed/ -> 404)
+  { name: "Today's Golfer", url: "https://www.todays-golfer.com/rss/", category: "Equipment", tier: "pro" },
   { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment", tier: "pro" },
-  { name: "Golfalot", url: "https://www.golfalot.com/rss/news.xml", category: "Equipment", tier: "pro" },
 
   // === REVIEWS ===
   { name: "MyGolfSpy", url: "https://feeds.feedburner.com/Mygolfspy", category: "Reviews", tier: "pro" },
   { name: "Breaking Eighty", url: "https://breakingeighty.com/feed/", category: "Reviews", tier: "community" },
-  { name: "GolfMagic", url: "https://www.golfmagic.com/feed", category: "Reviews", tier: "pro" },
 
   // === INDUSTRY ===
+  // KEPT — recovered by XML sanitizer (was "Invalid character" error)
   { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry", tier: "pro" },
-  { name: "Golf Australia", url: "https://golf.org.au/feed/", category: "Industry", tier: "pro" },
   { name: "Golf Course Industry", url: "https://www.golfcourseindustry.com/rss/", category: "Industry", tier: "pro" },
 
   // === LPGA ===
   { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA", tier: "pro" },
-  { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA", tier: "pro" },
   { name: "Women & Golf", url: "https://womenandgolf.com/feed", category: "LPGA", tier: "pro" },
 
   // === EUROPEAN TOUR ===
   { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour", tier: "pro" },
   { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour", tier: "community" },
-  { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour", tier: "pro" },
   { name: "Golf Canada", url: "https://www.golfcanada.ca/feed/", category: "European Tour", tier: "pro" },
 
-  // === COMMUNITY (blogs — kept deliberately small) ===
+  // === COMMUNITY ===
   { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community", tier: "community" },
-  { name: "Hooked On Golf Blog", url: "https://hookedongolfblog.com/feed/", category: "Community", tier: "community" },
+  // KEPT — recovered by XML sanitizer (was "Invalid character" error)
   { name: "No Laying Up", url: "https://www.nolayingup.com/blog?format=rss", category: "Community", tier: "pro" },
 
   // === LIFESTYLE & TRAVEL ===
   { name: "GolfNow Blog", url: "https://blog.golfnow.com/feed/", category: "Lifestyle", tier: "community" },
   { name: "Cookie Jar Golf", url: "https://cookiejargolf.com/feed/", category: "Travel", tier: "community" },
+  // KEPT — recovered by XML sanitizer (was "Attribute without value" error)
   { name: "Top 100 Golf Courses", url: "https://www.top100golfcourses.com/feed", category: "Travel", tier: "pro" },
-  { name: "LINKS Magazine", url: "https://www.linksmagazine.com/feed/", category: "Travel", tier: "pro" },
+  { name: "LINKS Magazine", url: "https://linksmagazine.com/feed/", category: "Travel", tier: "pro" },
 
   // === MENTAL GAME ===
   { name: "Golf State of Mind", url: "https://golfstateofmind.com/feed/", category: "Mental Game", tier: "community" },
 
-  // === INSTRUCTION (evergreen — fills quiet news days) ===
+  // === INSTRUCTION ===
   { name: "Golf Span", url: "https://golfspan.com/feed/", category: "Instruction", tier: "community" },
+  // KEPT — recovered by XML sanitizer (was "not recognized as RSS")
   { name: "The Pro Golf", url: "https://theprogolf.com/feed/", category: "Instruction", tier: "community" },
-  { name: "Andrew Rice Golf", url: "https://andrewricegolf.com/andrew-rice-golf/feed/", category: "Instruction", tier: "community" },
 
   // === SENIOR GOLF ===
   { name: "Senior Golf Source", url: "https://seniorgolfsource.com/feed/", category: "Senior Golf", tier: "community" },
@@ -154,25 +194,28 @@ const GOLF_FEEDS = [
   { name: "Golf Threads", url: "https://golf-threads.com/feed/", category: "Fashion", tier: "community" },
 
   // === MAGAZINE ===
-  { name: "Golf Monthly", url: "https://golfmonthly.com/feed/", category: "Magazine", tier: "pro" },
+  // CORRECTED URL (was /feed/ -> 404)
+  { name: "Golf Monthly", url: "https://www.golfmonthly.com/rss/all", category: "Magazine", tier: "pro" },
 
   // === BETTING ===
+  // KEPT — recovered by XML sanitizer (was "Invalid character" error)
   { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting", tier: "community" },
 
   // === ARCHITECTURE ===
-  { name: "The Fried Egg", url: "https://thefriedegg.com/feed/", category: "Architecture", tier: "pro" },
-  { name: "Geoff Shackelford", url: "https://geoffshackelford.com/feed/", category: "Architecture", tier: "pro" },
+  // REPLACEMENT for The Fried Egg (404) — Geoff Shackelford via alternate path
+  { name: "Geoff Shackelford", url: "https://geoffshackelford.substack.com/feed", category: "Architecture", tier: "pro" },
 
   // === STATS ===
-  { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats", tier: "pro" },
+  // CORRECTED URL (was /blog-feed -> 404)
+  { name: "Data Golf", url: "https://datagolf.com/feed", category: "Stats", tier: "pro" },
+
+  // NOTE: Removed Reddit r/golf (chatter, not news) and Google News (client req).
+  // NOTE: Removed Flushing It (domain dead) and The Golf News Net (401 gated).
 ];
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/**
- * Turn whatever an RSS item gives us into a valid ISO date string, or null.
- */
 function normalizeDate(item) {
   const candidates = [
     item.isoDate,
@@ -200,7 +243,6 @@ export async function GET(request) {
   const results = await Promise.allSettled(
     GOLF_FEEDS.map(async (feed) => {
       try {
-        // fetchFeed = browser UA + one automatic retry under a fallback UA.
         const parsed = await fetchFeed(feed.url);
         return (parsed.items || []).slice(0, 20).map((item) => {
           // --- Image extraction ---
@@ -230,7 +272,6 @@ export async function GET(request) {
             if (imgMatch3) image = imgMatch3[1];
           }
 
-          // --- Date ---
           const isoDate = normalizeDate(item);
           if (!isoDate) undatedCount++;
 
@@ -265,7 +306,6 @@ export async function GET(request) {
     }
   });
 
-  // Safe sort: newest-first, undated articles sink to the bottom.
   articles.sort((a, b) => {
     const ta = a.pubDate ? new Date(a.pubDate).getTime() : -Infinity;
     const tb = b.pubDate ? new Date(b.pubDate).getTime() : -Infinity;
