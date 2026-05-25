@@ -45,6 +45,25 @@ function articleId(a) {
   return (a.feedName || "") + "::" + (a.title || "") + "::" + (a.pubDate || "");
 }
 
+// Is this article "fresh" — current enough to anchor today's edition?
+// Prefers route.js's freshness tag (which also handles undated articles
+// via feed position). Falls back to a <24h pubDate check for older feed
+// payloads that predate the freshness field.
+function isFreshArticle(a) {
+  if (!a) return false;
+  if (a.freshness) return a.freshness === "fresh";
+  if (!a.pubDate) return false;
+  return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000;
+}
+
+// "recent" = fresh OR within ~48h — the wider net for a quiet news day.
+function isRecentArticle(a) {
+  if (!a) return false;
+  if (a.freshness) return a.freshness === "fresh" || a.freshness === "recent";
+  if (!a.pubDate) return false;
+  return (Date.now() - new Date(a.pubDate).getTime()) < 48 * 3600000;
+}
+
 function detectTrending(articles) {
   if (!articles || articles.length === 0) return {};
   var breakingWords = { "wins": 2, "won": 2, "victory": 2, "champion": 2, "breaks record": 4, "new record": 4, "injury": 3, "withdraws": 4, "withdrawn": 4, "suspended": 4, "banned": 4, "disqualified": 4, "fired": 4, "retires": 4, "retirement": 4, "ace": 2, "hole-in-one": 3, "albatross": 4, "playoff": 2, "controversial": 2 };
@@ -86,20 +105,29 @@ function CopyButton({ url }) {
   );
 }
 
-function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum }) {
+function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum, newestAgeH }) {
   var cc = CATEGORY_COLORS[article.feedCategory] || { bg: "#1f2937", text: "#9ca3af", icon: "" };
   var domain = "", urlPath = "";
   try { var u = new URL(article.link); domain = u.hostname.replace("www.", ""); urlPath = u.pathname.length > 1 ? u.pathname.slice(0, 50) : ""; } catch (e) {}
-  var ageH = (Date.now() - new Date(article.pubDate).getTime()) / 3600000;
+  var hasDate = !!article.pubDate;
+  var ageH = hasDate ? (Date.now() - new Date(article.pubDate).getTime()) / 3600000 : Infinity;
   var isSiren = trendScore && trendScore.score >= 20;
   var labels = [];
   if (isSiren) labels.push({ text: "\uD83D\uDEA8 SIREN", bg: "#dc2626", color: "#fff", siren: true });
   else if (trendScore && trendScore.score >= 12) labels.push({ text: "BREAKING", bg: "#dc2626", color: "#fff" });
   else if (trendScore && trendScore.score >= 7) labels.push({ text: "TRENDING", bg: "#7c3aed", color: "#fff" });
   else if (trendScore && trendScore.score >= 4) labels.push({ text: "BUZZ", bg: "#0369a1", color: "#fff" });
-  if (ageH < 3) labels.push({ text: "NEW", bg: "#dc2626", color: "#fff" });
-  else if (ageH < 8) labels.push({ text: "HOT", bg: "#ea580c", color: "#fff" });
-  else if (ageH < 24) labels.push({ text: "TODAY", bg: "#0c2e3d", color: "#38bdf8" });
+  // Relative freshness: "NEW"/"HOT" are measured against the freshest
+  // article currently in the feed (newestAgeH), not a fixed clock. This
+  // keeps the newest-available content flagged even on a quiet news day.
+  // "TODAY" stays absolute (genuine <24h). Undated articles get no
+  // freshness label — they shouldn't masquerade as current.
+  var anchor = typeof newestAgeH === "number" ? newestAgeH : 0;
+  if (hasDate) {
+    if (ageH <= anchor + 3) labels.push({ text: "NEW", bg: "#dc2626", color: "#fff" });
+    else if (ageH <= anchor + 9) labels.push({ text: "HOT", bg: "#ea580c", color: "#fff" });
+    else if (ageH < 24) labels.push({ text: "TODAY", bg: "#0c2e3d", color: "#38bdf8" });
+  }
   var hasImg = article.image && article.image.length > 10 && article.image.startsWith("http");
 
   return (
@@ -129,7 +157,12 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
               <span style={{ background: cc.bg, color: cc.text, padding: "2px 9px", borderRadius: 5, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.4px", border: "1px solid " + cc.text + "33", display: "flex", alignItems: "center", gap: 3 }}>
                 {cc.icon && <span style={{ fontSize: 10 }}>{cc.icon}</span>}{article.feedName}
               </span>
-              <span style={{ color: "#6b7280", fontSize: 11 }}>{formatDate(article.pubDate)}</span>
+              <span style={{ color: "#6b7280", fontSize: 11 }}>
+                {hasDate ? formatDate(article.pubDate)
+                  : (article.dateConfidence === "position"
+                      ? "recent \u00B7 no date"
+                      : "no date")}
+              </span>
               {!isSent && labels.map(function (lb, li) {
                 return <span key={li} style={{ background: lb.bg, color: lb.color, padding: "1px 7px", borderRadius: 3, fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", animation: lb.siren ? "sirenBadge 0.9s ease-in-out infinite" : "none" }}>{lb.text}</span>;
               })}
@@ -273,6 +306,21 @@ export default function Home() {
   var countBreaking = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 12; }).length;
   var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
   var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
+
+  // Relative-freshness anchor. The "NEW" badge should always light up on
+  // whatever is currently freshest — on a quiet day the newest story might
+  // be 9h old, not 3h. We find the minimum age across all dated articles
+  // and let ArticleCard label relative to that, so the dashboard never
+  // looks dead just because nothing is sub-3h.
+  var newestAgeH = (function () {
+    var min = Infinity;
+    articles.forEach(function (a) {
+      if (!a.pubDate) return;
+      var h = (Date.now() - new Date(a.pubDate).getTime()) / 3600000;
+      if (h >= 0 && h < min) min = h;
+    });
+    return min === Infinity ? 0 : min;
+  })();
 
   function toggleArticle(article) {
     var aid = articleId(article);
@@ -599,7 +647,15 @@ export default function Home() {
                           var act = filterCategory === cat;
                           var g = groupOf(cat);
                           var icon = cat === "All" ? "" : ((CATEGORY_COLORS[cat] || {}).icon || "");
-                          var count = cat === "All" ? articles.length : articles.filter(function (a) { return a.feedCategory === cat; }).length;
+                          // Freshness dashboard: the badge shows how many
+                          // articles in this category are FRESH (last 24h) —
+                          // not the total. A tab reading "0" tells you to
+                          // skip it; a high number says dig in. Total is
+                          // shown dimmed alongside for context.
+                          var catArticles = cat === "All" ? articles : articles.filter(function (a) { return a.feedCategory === cat; });
+                          var total = catArticles.length;
+                          var freshCount = catArticles.filter(isFreshArticle).length;
+                          var hasFresh = freshCount > 0;
                           return <button key={cat} onClick={function () { setFilterCategory(cat); }} style={{
                             padding: "8px 14px", borderRadius: 7,
                             border: act ? "1px solid " + g.text : "1px solid " + g.border,
@@ -607,10 +663,20 @@ export default function Home() {
                             color: act ? "#fff" : g.text,
                             fontSize: 12, fontWeight: 700, cursor: "pointer",
                             display: "flex", alignItems: "center", gap: 6,
+                            // A category with no fresh content visually recedes.
+                            opacity: act ? 1 : (hasFresh ? 1 : 0.5),
                           }}>
                             {icon && <span style={{ fontSize: 13 }}>{icon}</span>}
                             {cat}
-                            {cat !== "All" && <span style={{ background: act ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.3)", color: act ? "#fff" : g.text, padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700 }}>{count}</span>}
+                            {cat !== "All" && <span style={{
+                              background: act ? "rgba(0,0,0,0.25)" : (hasFresh ? "rgba(220,38,38,0.85)" : "rgba(0,0,0,0.3)"),
+                              color: act ? "#fff" : (hasFresh ? "#fff" : g.text),
+                              padding: "1px 7px", borderRadius: 9, fontSize: 11, fontWeight: 700,
+                            }}>{freshCount}</span>}
+                            {cat !== "All" && <span style={{
+                              color: act ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.30)",
+                              fontSize: 10, fontWeight: 600,
+                            }}>/{total}</span>}
                           </button>;
                         });
                       })()}
@@ -637,7 +703,7 @@ export default function Home() {
                     var sel = isSelected(article);
                     var aid = articleId(article);
                     var orderNum = sel ? orderedSelection.findIndex(function (a) { return articleId(a) === aid; }) + 1 : null;
-                    return <ArticleCard key={aid} article={article} selected={sel} isSent={false} trendScore={trendScores[aid] || null} orderNum={orderNum} onToggle={function () { toggleArticle(article); }} />;
+                    return <ArticleCard key={aid} article={article} selected={sel} isSent={false} trendScore={trendScores[aid] || null} orderNum={orderNum} newestAgeH={newestAgeH} onToggle={function () { toggleArticle(article); }} />;
                   })}
                 </div>
               )}
