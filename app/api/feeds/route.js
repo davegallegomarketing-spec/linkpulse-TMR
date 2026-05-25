@@ -1,38 +1,81 @@
 import Parser from "rss-parser";
 
-const parser = new Parser({
-  timeout: 10000,
-  headers: {
-    "User-Agent": "LinkPulse Golf/1.0 (RSS Aggregator)",
-    Accept: "application/rss+xml, application/xml, text/xml, */*",
-  },
-  customFields: {
-    item: [
-      ["media:content", "media:content"],
-      ["media:thumbnail", "media:thumbnail"],
-      ["content:encoded", "content:encoded"],
-      ["dc:date", "dc:date"],
-      ["published", "published"],
-      ["updated", "updated"],
-      ["lastBuildDate", "lastBuildDate"],
-    ],
-  },
-});
+/**
+ * Browser-like User-Agent.
+ *
+ * Why: many sites (Golf Channel, etc.) return HTTP 403 when they see an
+ * obvious bot string like "LinkPulse Golf/1.0 (RSS Aggregator)". Presenting a
+ * normal browser UA gets past simple bot filters. This does NOT defeat full
+ * Cloudflare/JS challenges — those few feeds need a different fix — but it
+ * rescues the feeds that only do basic UA sniffing, at zero cost.
+ */
+const BROWSER_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+/**
+ * A second, alternate UA. If the first request fails we retry once with this.
+ * Some sites block desktop Chrome but allow a generic feed reader, or vice
+ * versa — a single retry with a different identity recovers a few more.
+ */
+const FALLBACK_UA = "Feedfetcher-Google; (+http://www.google.com/feedfetcher.html)";
+
+function makeParser(userAgent) {
+  return new Parser({
+    timeout: 12000,
+    headers: {
+      "User-Agent": userAgent,
+      Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+      // Some CDNs reject requests with no Accept-Language.
+      "Accept-Language": "en-US,en;q=0.9",
+    },
+    customFields: {
+      item: [
+        ["media:content", "media:content"],
+        ["media:thumbnail", "media:thumbnail"],
+        ["content:encoded", "content:encoded"],
+        ["dc:date", "dc:date"],
+        ["published", "published"],
+        ["updated", "updated"],
+        ["lastBuildDate", "lastBuildDate"],
+      ],
+    },
+  });
+}
+
+const primaryParser = makeParser(BROWSER_UA);
+const fallbackParser = makeParser(FALLBACK_UA);
+
+/**
+ * Fetch a feed with one automatic retry under a different User-Agent.
+ * Returns the parsed feed, or throws the last error so the caller can log it.
+ */
+async function fetchFeed(feedUrl) {
+  try {
+    return await primaryParser.parseURL(feedUrl);
+  } catch (firstErr) {
+    // Retry once with the fallback identity before giving up.
+    try {
+      return await fallbackParser.parseURL(feedUrl);
+    } catch (secondErr) {
+      // Surface whichever message is more informative.
+      const msg = secondErr && secondErr.message ? secondErr.message : String(secondErr);
+      const err = new Error(msg);
+      err.firstAttempt = firstErr && firstErr.message ? firstErr.message : String(firstErr);
+      throw err;
+    }
+  }
+}
 
 /**
  * Feed list.
  *
  * tier:
  *   "pro"       = professional golf journalism / established publications.
- *                 These should dominate the newsletter.
- *   "community" = blogs / fan content / lighter material. Useful for variety
- *                 and for filling quiet news days, but lower priority.
+ *   "community" = blogs / fan content / lighter material.
  *
- * NOTE: Reddit r/golf was REMOVED. It posted constantly and dominated the
- * "newest" articles with non-news chatter ("Stole my sandwich", "Broke 80
- * today"). To replace that lost volume we widened the pro/evergreen sources
- * below — instruction, equipment, course/travel — which publish steadily even
- * when no tournament is on.
+ * NOTE: Reddit r/golf removed (community chatter, not newsletter-grade news).
+ * NOTE: Google News feeds removed per client requirement (no google.com links).
  */
 const GOLF_FEEDS = [
   // === TOUR NEWS ===
@@ -51,7 +94,6 @@ const GOLF_FEEDS = [
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News", tier: "pro" },
   { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News", tier: "pro" },
   { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News", tier: "pro" },
-  // NEW pro source — verify in feeds?verbose=true
   { name: "Yardbarker Golf", url: "https://www.yardbarker.com/rss/sport/8", category: "Tour News", tier: "pro" },
 
   // === LIV GOLF ===
@@ -63,7 +105,6 @@ const GOLF_FEEDS = [
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment", tier: "community" },
   { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment", tier: "pro" },
   { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment", tier: "pro" },
-  // NEW evergreen equipment source — verify in feeds?verbose=true
   { name: "Golfalot", url: "https://www.golfalot.com/rss/news.xml", category: "Equipment", tier: "pro" },
 
   // === REVIEWS ===
@@ -124,9 +165,6 @@ const GOLF_FEEDS = [
 
   // === STATS ===
   { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats", tier: "pro" },
-
-  // NOTE: Google News feeds removed per client requirement (no google.com links).
-  // NOTE: Reddit r/golf removed — community chatter, not newsletter-grade news.
 ];
 
 export const dynamic = "force-dynamic";
@@ -134,8 +172,6 @@ export const revalidate = 0;
 
 /**
  * Turn whatever an RSS item gives us into a valid ISO date string, or null.
- * Tries every known date field in order of reliability. Prevents the
- * "Invalid Date" bug and the NaN-corrupted sort.
  */
 function normalizeDate(item) {
   const candidates = [
@@ -164,7 +200,8 @@ export async function GET(request) {
   const results = await Promise.allSettled(
     GOLF_FEEDS.map(async (feed) => {
       try {
-        const parsed = await parser.parseURL(feed.url);
+        // fetchFeed = browser UA + one automatic retry under a fallback UA.
+        const parsed = await fetchFeed(feed.url);
         return (parsed.items || []).slice(0, 20).map((item) => {
           // --- Image extraction ---
           var image = null;
@@ -205,7 +242,6 @@ export async function GET(request) {
             dateKnown: isoDate !== null,
             feedName: feed.name,
             feedCategory: feed.category,
-            // Source quality tier — lets the UI favor pro journalism.
             tier: feed.tier || "community",
             image: image,
           };
