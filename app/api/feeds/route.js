@@ -281,9 +281,22 @@ function categorizeArticle(article, feedHintCategory) {
 /**
  * Tag an article's freshness by age. This drives the "keep current" goal:
  * the UI can show fresh counts and the ranker can gate on it.
+ *
+ * When an article has no parseable date (some feeds — notably Sky Sports —
+ * ship items with no usable date field), we DON'T sink it to "unknown" and
+ * make it invisible. RSS feeds are reverse-chronological, so the item's
+ * position is a reliable proxy: the first few items are the newest.
+ *   - feedIndex 0-2 -> "recent"  (top of an active feed = today-ish)
+ *   - feedIndex 3+  -> "evergreen"
+ * We never award "fresh" to a dated-by-position article — "fresh" should
+ * mean a known sub-24h timestamp, not a guess. "recent" keeps it visible
+ * and rankable without claiming precision we don't have.
  */
-function freshnessOf(isoDate) {
-  if (!isoDate) return "unknown";
+function freshnessOf(isoDate, feedIndex) {
+  if (!isoDate) {
+    if (typeof feedIndex === "number" && feedIndex <= 2) return "recent";
+    return "evergreen";
+  }
   const ageH = (Date.now() - new Date(isoDate).getTime()) / 3600000;
   if (ageH < 24) return "fresh"; // last day
   if (ageH < 72) return "recent"; // last 3 days
@@ -321,7 +334,7 @@ export async function GET(request) {
     GOLF_FEEDS.map(async (feed) => {
       try {
         const parsed = await fetchFeed(feed.url);
-        return (parsed.items || []).slice(0, 20).map((item) => {
+        return (parsed.items || []).slice(0, 20).map((item, feedIndex) => {
           // --- Image extraction ---
           var image = null;
           if (item["media:content"] && item["media:content"]["$"] && item["media:content"]["$"].url) {
@@ -358,6 +371,10 @@ export async function GET(request) {
             description: (item.contentSnippet || item.content || "").slice(0, 300),
             pubDate: isoDate,
             dateKnown: isoDate !== null,
+            // "exact" = parsed from the feed; "position" = inferred from the
+            // item's slot in a reverse-chronological feed. The ranker should
+            // trust "exact" freshness over "position" freshness when sorting.
+            dateConfidence: isoDate !== null ? "exact" : "position",
             feedName: feed.name,
             tier: feed.tier || "community",
             image: image,
@@ -366,7 +383,8 @@ export async function GET(request) {
           // The article decides its own category from its own text.
           article.feedCategory = categorizeArticle(article, feed.category);
           // Freshness tag — drives "keep current" in the UI and ranker.
-          article.freshness = freshnessOf(isoDate);
+          // Undated articles fall back to feed position instead of vanishing.
+          article.freshness = freshnessOf(isoDate, feedIndex);
 
           return article;
         });
@@ -389,11 +407,19 @@ export async function GET(request) {
     }
   });
 
-  // Newest-first; undated articles sink to the bottom.
+  // Newest-first. Articles with a real date sort by it. Articles with no
+  // parseable date but tagged "recent" by feed position (e.g. Sky Sports)
+  // get a synthetic timestamp ~72h old — below genuinely fresh dated news,
+  // but well above evergreen filler, so current-but-undated stories stay
+  // visible instead of sinking to the bottom of the list.
+  const SYNTH_RECENT = Date.now() - 72 * 3600000;
   articles.sort((a, b) => {
-    const ta = a.pubDate ? new Date(a.pubDate).getTime() : -Infinity;
-    const tb = b.pubDate ? new Date(b.pubDate).getTime() : -Infinity;
-    return tb - ta;
+    const score = (x) => {
+      if (x.pubDate) return new Date(x.pubDate).getTime();
+      if (x.freshness === "recent") return SYNTH_RECENT;
+      return -Infinity; // undated + not position-recent: genuine filler
+    };
+    return score(b) - score(a);
   });
 
   const payload = {
@@ -412,13 +438,18 @@ export async function GET(request) {
       const c = a.feedCategory;
       if (!byCategory[c]) byCategory[c] = { total: 0, fresh: 0, recent: 0, evergreen: 0 };
       byCategory[c].total++;
-      byCategory[c][a.freshness === "unknown" ? "evergreen" : a.freshness]++;
+      // freshness is always one of fresh/recent/evergreen now — undated
+      // articles get a position-based tag, never "unknown".
+      byCategory[c][a.freshness]++;
     });
 
     payload.diagnostics = {
       workingFeeds: GOLF_FEEDS.length - errors.length,
       brokenFeeds: errors.length,
       undatedArticles: undatedCount,
+      // Of the undated ones, how many we kept visible via feed-position
+      // freshness (tagged "recent") vs. let settle to "evergreen".
+      datedByPosition: articles.filter((a) => a.dateConfidence === "position").length,
       proArticles: articles.filter((a) => a.tier === "pro").length,
       communityArticles: articles.filter((a) => a.tier === "community").length,
       freshArticles: articles.filter((a) => a.freshness === "fresh").length,
