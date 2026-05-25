@@ -11,7 +11,6 @@ const parser = new Parser({
       ["media:content", "media:content"],
       ["media:thumbnail", "media:thumbnail"],
       ["content:encoded", "content:encoded"],
-      // Some feeds (Atom, certain WordPress configs) only expose these:
       ["dc:date", "dc:date"],
       ["published", "published"],
       ["updated", "updated"],
@@ -20,143 +19,146 @@ const parser = new Parser({
   },
 });
 
+/**
+ * Feed list.
+ *
+ * tier:
+ *   "pro"       = professional golf journalism / established publications.
+ *                 These should dominate the newsletter.
+ *   "community" = blogs / fan content / lighter material. Useful for variety
+ *                 and for filling quiet news days, but lower priority.
+ *
+ * NOTE: Reddit r/golf was REMOVED. It posted constantly and dominated the
+ * "newest" articles with non-news chatter ("Stole my sandwich", "Broke 80
+ * today"). To replace that lost volume we widened the pro/evergreen sources
+ * below — instruction, equipment, course/travel — which publish steadily even
+ * when no tournament is on.
+ */
 const GOLF_FEEDS = [
-  // === TOUR NEWS (high frequency) ===
-  { name: "Golf.com", url: "https://golf.com/feed/", category: "Tour News" },
-  { name: "Golf365", url: "https://golf365.com/feed/", category: "Tour News" },
-  { name: "National Club Golfer", url: "https://nationalclubgolfer.com/feed/", category: "Tour News" },
-  { name: "Golf One Media", url: "https://golfonemedia.com/feed/", category: "Tour News" },
-  { name: "Irish Golf Desk", url: "https://irishgolfdesk.com/news-files/rss.xml", category: "Tour News" },
-  { name: "The Golf News Net", url: "https://thegolfnewsnet.com/feed/", category: "Tour News" },
-  { name: "GolfBlogger", url: "https://golfblogger.com/feed/", category: "Tour News" },
-  { name: "Golf Channel", url: "https://www.golfchannel.com/rss", category: "Tour News" },
-  { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News" },
-  { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News" },
-  { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News" },
-  { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News" },
-  { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News" },
-  { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News" },
-  { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News" },
+  // === TOUR NEWS ===
+  { name: "Golf.com", url: "https://golf.com/feed/", category: "Tour News", tier: "pro" },
+  { name: "Golf365", url: "https://golf365.com/feed/", category: "Tour News", tier: "pro" },
+  { name: "National Club Golfer", url: "https://nationalclubgolfer.com/feed/", category: "Tour News", tier: "pro" },
+  { name: "Golf One Media", url: "https://golfonemedia.com/feed/", category: "Tour News", tier: "community" },
+  { name: "Irish Golf Desk", url: "https://irishgolfdesk.com/news-files/rss.xml", category: "Tour News", tier: "pro" },
+  { name: "The Golf News Net", url: "https://thegolfnewsnet.com/feed/", category: "Tour News", tier: "pro" },
+  { name: "GolfBlogger", url: "https://golfblogger.com/feed/", category: "Tour News", tier: "community" },
+  { name: "Golf Channel", url: "https://www.golfchannel.com/rss", category: "Tour News", tier: "pro" },
+  { name: "PGA Tour", url: "https://www.pgatour.com/feed", category: "Tour News", tier: "pro" },
+  { name: "Golf Digest", url: "https://www.golfdigest.com/feed/rss", category: "Tour News", tier: "pro" },
+  { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News", tier: "pro" },
+  { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News", tier: "pro" },
+  { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News", tier: "pro" },
+  { name: "Golfweek", url: "https://golfweek.usatoday.com/feed/", category: "Tour News", tier: "pro" },
+  { name: "Golfweek PGA Tour", url: "https://golfweek.usatoday.com/category/pga-tour/feed/", category: "Tour News", tier: "pro" },
+  // NEW pro source — verify in feeds?verbose=true
+  { name: "Yardbarker Golf", url: "https://www.yardbarker.com/rss/sport/8", category: "Tour News", tier: "pro" },
 
   // === LIV GOLF ===
-  { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf" },
-  { name: "Flushing It", url: "https://flushingitgolf.com/feed/", category: "LIV Golf" },
+  { name: "LIV Golf Official", url: "https://www.livgolf.com/rss.xml", category: "LIV Golf", tier: "pro" },
+  { name: "Flushing It", url: "https://flushingitgolf.com/feed/", category: "LIV Golf", tier: "community" },
 
   // === EQUIPMENT ===
-  { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment" },
-  { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment" },
-  { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment" },
-  { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment" },
+  { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment", tier: "pro" },
+  { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment", tier: "community" },
+  { name: "Today's Golfer", url: "https://www.todays-golfer.com/feed/", category: "Equipment", tier: "pro" },
+  { name: "Plugged In Golf", url: "https://pluggedingolf.com/feed/", category: "Equipment", tier: "pro" },
+  // NEW evergreen equipment source — verify in feeds?verbose=true
+  { name: "Golfalot", url: "https://www.golfalot.com/rss/news.xml", category: "Equipment", tier: "pro" },
 
   // === REVIEWS ===
-  { name: "MyGolfSpy", url: "https://feeds.feedburner.com/Mygolfspy", category: "Reviews" },
-  { name: "Breaking Eighty", url: "https://breakingeighty.com/feed/", category: "Reviews" },
-  { name: "GolfMagic", url: "https://www.golfmagic.com/feed", category: "Reviews" },
+  { name: "MyGolfSpy", url: "https://feeds.feedburner.com/Mygolfspy", category: "Reviews", tier: "pro" },
+  { name: "Breaking Eighty", url: "https://breakingeighty.com/feed/", category: "Reviews", tier: "community" },
+  { name: "GolfMagic", url: "https://www.golfmagic.com/feed", category: "Reviews", tier: "pro" },
 
   // === INDUSTRY ===
-  { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry" },
-  { name: "Golf Australia", url: "https://golf.org.au/feed/", category: "Industry" },
-  { name: "Golf Course Industry", url: "https://www.golfcourseindustry.com/rss/", category: "Industry" },
+  { name: "Golf Business News", url: "https://golfbusinessnews.com/feed/", category: "Industry", tier: "pro" },
+  { name: "Golf Australia", url: "https://golf.org.au/feed/", category: "Industry", tier: "pro" },
+  { name: "Golf Course Industry", url: "https://www.golfcourseindustry.com/rss/", category: "Industry", tier: "pro" },
 
   // === LPGA ===
-  { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA" },
-  { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA" },
-  { name: "Women & Golf", url: "https://womenandgolf.com/feed", category: "LPGA" },
+  { name: "Women's Golf", url: "https://womensgolf.com/feed/", category: "LPGA", tier: "pro" },
+  { name: "Ladies European Tour", url: "https://ladieseuropeantour.com/feed/", category: "LPGA", tier: "pro" },
+  { name: "Women & Golf", url: "https://womenandgolf.com/feed", category: "LPGA", tier: "pro" },
 
   // === EUROPEAN TOUR ===
-  { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour" },
-  { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour" },
-  { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour" },
-  { name: "Golf Canada", url: "https://www.golfcanada.ca/feed/", category: "European Tour" },
+  { name: "Golf News UK", url: "https://golfnews.co.uk/feed/", category: "European Tour", tier: "pro" },
+  { name: "Your Golf Travel", url: "https://yourgolftravel.com/19th-hole/feed/", category: "European Tour", tier: "community" },
+  { name: "Bunkered", url: "https://bunkered.co.uk/feed", category: "European Tour", tier: "pro" },
+  { name: "Golf Canada", url: "https://www.golfcanada.ca/feed/", category: "European Tour", tier: "pro" },
 
-  // === COMMUNITY ===
-  { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community" },
-  { name: "Hooked On Golf Blog", url: "https://hookedongolfblog.com/feed/", category: "Community" },
-  { name: "No Laying Up", url: "https://www.nolayingup.com/blog?format=rss", category: "Community" },
+  // === COMMUNITY (blogs — kept deliberately small) ===
+  { name: "The Sand Trap", url: "https://thesandtrap.com/b/feed", category: "Community", tier: "community" },
+  { name: "Hooked On Golf Blog", url: "https://hookedongolfblog.com/feed/", category: "Community", tier: "community" },
+  { name: "No Laying Up", url: "https://www.nolayingup.com/blog?format=rss", category: "Community", tier: "pro" },
 
   // === LIFESTYLE & TRAVEL ===
-  { name: "GolfNow Blog", url: "https://blog.golfnow.com/feed/", category: "Lifestyle" },
-  { name: "Cookie Jar Golf", url: "https://cookiejargolf.com/feed/", category: "Travel" },
-  { name: "Top 100 Golf Courses", url: "https://www.top100golfcourses.com/feed", category: "Travel" },
-  { name: "LINKS Magazine", url: "https://www.linksmagazine.com/feed/", category: "Travel" },
+  { name: "GolfNow Blog", url: "https://blog.golfnow.com/feed/", category: "Lifestyle", tier: "community" },
+  { name: "Cookie Jar Golf", url: "https://cookiejargolf.com/feed/", category: "Travel", tier: "community" },
+  { name: "Top 100 Golf Courses", url: "https://www.top100golfcourses.com/feed", category: "Travel", tier: "pro" },
+  { name: "LINKS Magazine", url: "https://www.linksmagazine.com/feed/", category: "Travel", tier: "pro" },
 
   // === MENTAL GAME ===
-  { name: "Golf State of Mind", url: "https://golfstateofmind.com/feed/", category: "Mental Game" },
+  { name: "Golf State of Mind", url: "https://golfstateofmind.com/feed/", category: "Mental Game", tier: "community" },
 
-  // === INSTRUCTION ===
-  { name: "Golf Span", url: "https://golfspan.com/feed/", category: "Instruction" },
-  { name: "The Pro Golf", url: "https://theprogolf.com/feed/", category: "Instruction" },
-  { name: "Andrew Rice Golf", url: "https://andrewricegolf.com/andrew-rice-golf/feed/", category: "Instruction" },
+  // === INSTRUCTION (evergreen — fills quiet news days) ===
+  { name: "Golf Span", url: "https://golfspan.com/feed/", category: "Instruction", tier: "community" },
+  { name: "The Pro Golf", url: "https://theprogolf.com/feed/", category: "Instruction", tier: "community" },
+  { name: "Andrew Rice Golf", url: "https://andrewricegolf.com/andrew-rice-golf/feed/", category: "Instruction", tier: "community" },
 
   // === SENIOR GOLF ===
-  { name: "Senior Golf Source", url: "https://seniorgolfsource.com/feed/", category: "Senior Golf" },
+  { name: "Senior Golf Source", url: "https://seniorgolfsource.com/feed/", category: "Senior Golf", tier: "community" },
 
   // === FASHION ===
-  { name: "Golf Threads", url: "https://golf-threads.com/feed/", category: "Fashion" },
+  { name: "Golf Threads", url: "https://golf-threads.com/feed/", category: "Fashion", tier: "community" },
 
   // === MAGAZINE ===
-  { name: "Golf Monthly", url: "https://golfmonthly.com/feed/", category: "Magazine" },
+  { name: "Golf Monthly", url: "https://golfmonthly.com/feed/", category: "Magazine", tier: "pro" },
 
   // === BETTING ===
-  { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting" },
+  { name: "Cal Golf News", url: "https://calgolfnews.com/feed/", category: "Betting", tier: "community" },
 
   // === ARCHITECTURE ===
-  { name: "The Fried Egg", url: "https://thefriedegg.com/feed/", category: "Architecture" },
-  { name: "Geoff Shackelford", url: "https://geoffshackelford.com/feed/", category: "Architecture" },
+  { name: "The Fried Egg", url: "https://thefriedegg.com/feed/", category: "Architecture", tier: "pro" },
+  { name: "Geoff Shackelford", url: "https://geoffshackelford.com/feed/", category: "Architecture", tier: "pro" },
 
   // === STATS ===
-  { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats" },
+  { name: "Data Golf", url: "https://datagolf.com/blog-feed", category: "Stats", tier: "pro" },
 
-  // === AGGREGATOR / SEARCH-BASED FEEDS ===
-  // NOTE: Google News feeds removed per client requirement — all articles must
-  // link directly to the original news source, never through google.com.
-  { name: "Reddit r/golf", url: "https://www.reddit.com/r/golf/.rss", category: "Community" },
+  // NOTE: Google News feeds removed per client requirement (no google.com links).
+  // NOTE: Reddit r/golf removed — community chatter, not newsletter-grade news.
 ];
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 /**
- * Robustly turn whatever an RSS item gives us into a valid ISO date string.
- *
- * Why this exists: rss-parser populates `item.pubDate` / `item.isoDate` for
- * well-behaved feeds, but several feeds (Sky Sports, some Atom feeds, certain
- * WordPress setups) put the date under a different element. When that happens
- * the old code produced "" -> new Date("") -> Invalid Date, which (a) showed
- * "Invalid Date" in the UI and (b) returned NaN inside the sort comparator,
- * corrupting the entire article order.
- *
- * Strategy: try every known field, in order of reliability. If a candidate
- * parses to a real date, return its ISO string. If absolutely nothing works,
- * return null so the caller can decide what to do (we treat it as "unknown").
+ * Turn whatever an RSS item gives us into a valid ISO date string, or null.
+ * Tries every known date field in order of reliability. Prevents the
+ * "Invalid Date" bug and the NaN-corrupted sort.
  */
 function normalizeDate(item) {
   const candidates = [
-    item.isoDate, // rss-parser's own normalized field — most reliable
-    item.pubDate, // standard RSS <pubDate>
-    item.published, // Atom <published>
-    item.updated, // Atom <updated>
-    item["dc:date"], // Dublin Core <dc:date>
-    item.date, // some feeds use a bare <date>
-    item.lastBuildDate, // last-resort feed-level field
+    item.isoDate,
+    item.pubDate,
+    item.published,
+    item.updated,
+    item["dc:date"],
+    item.date,
+    item.lastBuildDate,
   ];
-
   for (const c of candidates) {
     if (!c) continue;
     const t = new Date(c).getTime();
-    if (!Number.isNaN(t)) {
-      return new Date(t).toISOString();
-    }
+    if (!Number.isNaN(t)) return new Date(t).toISOString();
   }
-
-  return null; // genuinely no usable date
+  return null;
 }
 
 export async function GET(request) {
   const url = new URL(request.url);
   const verbose = url.searchParams.get("verbose") === "true";
 
-  // Counts how many articles had no parseable date — surfaced in verbose mode.
   let undatedCount = 0;
 
   const results = await Promise.allSettled(
@@ -164,7 +166,7 @@ export async function GET(request) {
       try {
         const parsed = await parser.parseURL(feed.url);
         return (parsed.items || []).slice(0, 20).map((item) => {
-          // --- Image extraction (unchanged) ---
+          // --- Image extraction ---
           var image = null;
           if (item["media:content"] && item["media:content"]["$"] && item["media:content"]["$"].url) {
             image = item["media:content"]["$"].url;
@@ -191,7 +193,7 @@ export async function GET(request) {
             if (imgMatch3) image = imgMatch3[1];
           }
 
-          // --- Date normalization (the fix) ---
+          // --- Date ---
           const isoDate = normalizeDate(item);
           if (!isoDate) undatedCount++;
 
@@ -199,12 +201,12 @@ export async function GET(request) {
             title: item.title || "Untitled",
             link: item.link || item.guid || "#",
             description: (item.contentSnippet || item.content || "").slice(0, 300),
-            // pubDate is now ALWAYS a valid ISO string, or null. Never "".
             pubDate: isoDate,
-            // dateKnown lets the UI distinguish "real date" from "we guessed".
             dateKnown: isoDate !== null,
             feedName: feed.name,
             feedCategory: feed.category,
+            // Source quality tier — lets the UI favor pro journalism.
+            tier: feed.tier || "community",
             image: image,
           };
         });
@@ -227,9 +229,7 @@ export async function GET(request) {
     }
   });
 
-  // --- Safe sort: never returns NaN ---
-  // Articles with a known date sort newest-first. Articles with NO date are
-  // pushed to the bottom (treated as oldest) instead of scrambling the list.
+  // Safe sort: newest-first, undated articles sink to the bottom.
   articles.sort((a, b) => {
     const ta = a.pubDate ? new Date(a.pubDate).getTime() : -Infinity;
     const tb = b.pubDate ? new Date(b.pubDate).getTime() : -Infinity;
@@ -250,6 +250,8 @@ export async function GET(request) {
       workingFeeds: working,
       brokenFeeds: errors.length,
       undatedArticles: undatedCount,
+      proArticles: articles.filter((a) => a.tier === "pro").length,
+      communityArticles: articles.filter((a) => a.tier === "community").length,
       brokenList: errors.map((e) => ({ name: e.error, category: e.category, url: e.url, error: e.message })),
     };
   }
