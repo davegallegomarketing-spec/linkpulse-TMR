@@ -467,6 +467,20 @@ function dedupSameStory(a, b) {
 }
 
 /**
+ * A stable "story identity" for an article: subject + event, e.g.
+ * "clark|byron-nelson". Used so the UI can tell when an article covers a
+ * story that was ALREADY PUBLISHED (even if it's a different article from a
+ * different source). Returns null when there isn't enough signal to identify
+ * the story — callers must treat null as "no story match", never group nulls.
+ */
+function storyKeyOf(title) {
+  const subj = dedupSubject(title);
+  const evt = dedupEventKey(title);
+  if (!subj || !evt) return null;
+  return subj + "|" + evt;
+}
+
+/**
  * Tag duplicates in place. Must run AFTER scoreArticle so we can keep the
  * highest-scoring article of each cluster as the canonical one.
  */
@@ -638,6 +652,10 @@ export async function GET(request) {
           // Freshness tag — drives "keep current" in the UI and ranker.
           // Undated articles fall back to feed position instead of vanishing.
           article.freshness = freshnessOf(isoDate, feedIndex);
+          // Stable story identity (subject+event) — lets the UI hide an
+          // article whose STORY was already published, even from another
+          // source. null when the story can't be identified from the title.
+          article.storyKey = storyKeyOf(article.title);
 
           return article;
         });
