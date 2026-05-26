@@ -419,8 +419,18 @@ function scoreArticle(article) {
  * whose duplicateOf is set, so only one per cluster can be auto-picked.
  */
 const DEDUP_STOPCAP = new Set([
-  "The", "A", "An", "Golf", "Tour", "Cup", "Day", "New", "What", "Best",
-  "Why", "How", "This", "These", "After", "Photos", "Watch",
+  // articles / generic leading words
+  "The", "A", "An", "This", "These", "That", "After", "Before", "How",
+  "What", "Why", "When", "Where", "Who", "Best", "New", "Now", "Top",
+  // generic golf words that aren't people
+  "Golf", "Tour", "Cup", "Day", "Open", "Pro", "Club", "Course", "Event",
+  "Round", "Win", "Wins", "Final", "Photos", "Watch", "Video", "Latest",
+  "Report", "Recap", "Preview", "Throwback", "Time", "Machine", "Slabs",
+  "Inside", "Former", "Revealed", "Most", "Live", "Lead", "Ways",
+  // event / place words — must NOT be picked as a person-subject
+  "Byron", "Nelson", "Masters", "Augusta", "Aronimink", "Soudal", "PGA",
+  "LPGA", "LIV", "Morocco", "Lalla", "Meryem", "Shinnecock", "Schwab",
+  "Colonial", "Championship", "Texas", "Dallas", "Charles", "CJ", "NCAA",
 ]);
 
 // Event groups: alias tokens that all point to the same real-world event.
@@ -434,7 +444,12 @@ const DEDUP_EVENT_GROUPS = [
   { key: "schwab", toks: ["schwab challenge", "colonial"] },
 ];
 
-// SUBJECT = first significant proper noun in the title (who it's about).
+// SUBJECT = the person a story is about. We take the first capitalized word
+// that is NOT a generic headline word and NOT an event/place name. If none
+// qualifies, return null — meaning "can't identify a subject, do not story-
+// match this article." Returning null is the SAFE outcome: a missed merge
+// just shows a story twice; a wrong subject causes a wrong merge (e.g.
+// "How to bet the CJ Cup" wrongly merging with the tournament recap).
 function dedupSubject(title) {
   const matches = (title || "").match(/\b[A-Z][a-z]{2,}('s)?\b/g) || [];
   for (const w of matches) {
