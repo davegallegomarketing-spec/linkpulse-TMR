@@ -394,6 +394,112 @@ function scoreArticle(article) {
  *     lineup isn't 10 driver reviews. The user wanted the ~15 subcategories
  *     kept distinct — this makes the auto-pick honour that spread.
  */
+/**
+ * ===========================================================================
+ * STORY DE-DUPLICATION (conservative first pass)
+ * ===========================================================================
+ * The same event gets covered by many feeds — e.g. one PGA Tour win shows up
+ * 5x (ESPN, BBC, Sky, etc.). For a 10-slot newsletter we want ONE copy.
+ *
+ * This is a CONSERVATIVE pass: it only merges articles when it is confident
+ * they are the same story — same SUBJECT (the player the headline is about)
+ * AND same EVENT group AND published within 48h. It deliberately errs toward
+ * UNDER-merging: a missed duplicate just means the editor sees a story twice
+ * and drops one (trivial). A false merge would silently hide a real story —
+ * far worse — so we never merge on a weak signal.
+ *
+ * Known limits (headline-only matching can't catch these — see HANDOFF):
+ *   - headlines that never name the event ("Clark ends two-year wait...")
+ *   - headlines with no person named ("The CJ Cup Byron Nelson Recap")
+ *   - a leading place name stealing the subject slot ("Canada's Huang...")
+ * These remain as separate clusters — visible, not hidden.
+ *
+ * Each article gains `duplicateOf` (link of the cluster's kept article, or
+ * null if it IS the kept one / is unclustered). The ranker skips articles
+ * whose duplicateOf is set, so only one per cluster can be auto-picked.
+ */
+const DEDUP_STOPCAP = new Set([
+  "The", "A", "An", "Golf", "Tour", "Cup", "Day", "New", "What", "Best",
+  "Why", "How", "This", "These", "After", "Photos", "Watch",
+]);
+
+// Event groups: alias tokens that all point to the same real-world event.
+const DEDUP_EVENT_GROUPS = [
+  { key: "byron-nelson", toks: ["byron", "nelson"] },
+  { key: "let-morocco", toks: ["morocco", "meryem", "lalla"] },
+  { key: "pga-champ", toks: ["pga championship", "aronimink"] },
+  { key: "soudal", toks: ["soudal"] },
+  { key: "masters", toks: ["masters", "augusta"] },
+  { key: "us-open", toks: ["us open", "shinnecock"] },
+  { key: "schwab", toks: ["schwab challenge", "colonial"] },
+];
+
+// SUBJECT = first significant proper noun in the title (who it's about).
+function dedupSubject(title) {
+  const matches = (title || "").match(/\b[A-Z][a-z]{2,}('s)?\b/g) || [];
+  for (const w of matches) {
+    const c = w.replace(/'s$/, "");
+    if (!DEDUP_STOPCAP.has(c)) return c.toLowerCase();
+  }
+  return null;
+}
+
+function dedupEventKey(title) {
+  const lc = (title || "").toLowerCase();
+  for (const g of DEDUP_EVENT_GROUPS) {
+    if (g.toks.some((tk) => lc.includes(tk))) return g.key;
+  }
+  return null;
+}
+
+// Two articles are the same story only if subject + event match and (when
+// both dated) they are within 48h. Undated articles pass on subject+event.
+function dedupSameStory(a, b) {
+  const sa = dedupSubject(a.title), sb = dedupSubject(b.title);
+  if (!sa || !sb || sa !== sb) return false;
+  const ea = dedupEventKey(a.title), eb = dedupEventKey(b.title);
+  if (!ea || !eb || ea !== eb) return false;
+  if (a.pubDate && b.pubDate) {
+    const dh = Math.abs(new Date(a.pubDate) - new Date(b.pubDate)) / 3600000;
+    if (dh > 48) return false;
+  }
+  return true;
+}
+
+/**
+ * Tag duplicates in place. Must run AFTER scoreArticle so we can keep the
+ * highest-scoring article of each cluster as the canonical one.
+ */
+function markDuplicates(articles) {
+  // Union-find clustering.
+  const parent = articles.map((_, i) => i);
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  for (let i = 0; i < articles.length; i++) {
+    for (let j = i + 1; j < articles.length; j++) {
+      if (dedupSameStory(articles[i], articles[j])) parent[find(i)] = find(j);
+    }
+  }
+  const clusters = {};
+  articles.forEach((a, i) => {
+    const r = find(i);
+    (clusters[r] = clusters[r] || []).push(a);
+  });
+  let duplicateCount = 0;
+  Object.values(clusters).forEach((group) => {
+    if (group.length < 2) {
+      group[0].duplicateOf = null;
+      return;
+    }
+    // Keep the highest-scoring article; mark the rest as duplicates of it.
+    const keep = group.reduce((m, x) => (x.rank.score > m.rank.score ? x : m));
+    group.forEach((a) => {
+      a.duplicateOf = a === keep ? null : keep.link;
+      if (a !== keep) duplicateCount++;
+    });
+  });
+  return duplicateCount;
+}
+
 function rankArticles(articles, limit = 10, perCategoryCap = 3) {
   // Score everything.
   articles.forEach((a) => {
@@ -406,10 +512,14 @@ function rankArticles(articles, limit = 10, perCategoryCap = 3) {
     };
   });
 
-  // Eligible = passes the hard freshness gate. Sorted strongest-first;
-  // ties broken by a known date being newer (exact dates only).
+  // De-duplicate AFTER scoring (needs scores to pick the canonical article).
+  const duplicateCount = markDuplicates(articles);
+
+  // Eligible = passes the hard freshness gate AND is not a duplicate of a
+  // higher-scoring article. Sorted strongest-first; ties broken by a known
+  // date being newer (exact dates only).
   const eligible = articles
-    .filter((a) => a.freshness === "fresh" || a.freshness === "recent")
+    .filter((a) => (a.freshness === "fresh" || a.freshness === "recent") && !a.duplicateOf)
     .sort((a, b) => {
       if (b.rank.score !== a.rank.score) return b.rank.score - a.rank.score;
       const at = a.pubDate ? new Date(a.pubDate).getTime() : 0;
@@ -442,6 +552,7 @@ function rankArticles(articles, limit = 10, perCategoryCap = 3) {
       score: a.rank.score,
     })),
     eligibleCount: eligible.length,
+    duplicateCount: duplicateCount,
   };
 }
 
@@ -607,6 +718,7 @@ export async function GET(request) {
       ranker: {
         eligibleArticles: ranking.eligibleCount,
         autoPicked: ranking.picks.length,
+        duplicatesCollapsed: ranking.duplicateCount,
         lineupScoreRange: ranking.picks.length
           ? {
               top: ranking.picks[0].score,
