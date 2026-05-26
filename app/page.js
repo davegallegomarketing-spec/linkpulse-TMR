@@ -253,6 +253,7 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear }
 
 export default function Home() {
   var _art = useState([]), articles = _art[0], setArticles = _art[1];
+  var _auto = useState([]), autoLineup = _auto[0], setAutoLineup = _auto[1];
   var _ord = useState([]), orderedSelection = _ord[0], setOrderedSelection = _ord[1];
   var _load = useState(true), loading = _load[0], setLoading = _load[1];
   var _err = useState(null), error = _err[0], setError = _err[1];
@@ -270,6 +271,7 @@ export default function Home() {
       if (!res.ok) throw new Error("HTTP " + res.status);
       var data = await res.json();
       setArticles(data.articles || []);
+      setAutoLineup(data.autoLineup || []);
       setFetchMeta({ total: data.total, sources: data.sources, errors: data.errors || [], fetchedAt: data.fetchedAt });
     } catch (err) { setError(err.message); }
     setLoading(false);
@@ -299,13 +301,6 @@ export default function Home() {
   if (imagesOnly) { filteredArticles = filteredArticles.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }); }
 
   var countBase = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
-  var countNew = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 3 * 3600000; }).length;
-  var countHot = countBase.filter(function (a) { var age = Date.now() - new Date(a.pubDate).getTime(); return age >= 3 * 3600000 && age < 8 * 3600000; }).length;
-  var countToday = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
-  var countTrending = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 4; }).length;
-  var countBreaking = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 12; }).length;
-  var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
-  var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
 
   // Relative-freshness anchor. The "NEW" badge should always light up on
   // whatever is currently freshest — on a quiet day the newest story might
@@ -322,6 +317,27 @@ export default function Home() {
     return min === Infinity ? 0 : min;
   })();
 
+  // NEW / HOT pill counts use the SAME relative thresholds as the card
+  // badges in ArticleCard (anchor + 3 / anchor + 9). Previously these used
+  // fixed absolute windows (<3h / 3-8h), so the pill could read "NEW 0"
+  // while cards showed red NEW badges. Anchoring both to newestAgeH keeps
+  // the pill and the card badges in agreement.
+  function ageHours(a) { return (Date.now() - new Date(a.pubDate).getTime()) / 3600000; }
+  var countNew = countBase.filter(function (a) {
+    if (!a.pubDate) return false;
+    return ageHours(a) <= newestAgeH + 3;
+  }).length;
+  var countHot = countBase.filter(function (a) {
+    if (!a.pubDate) return false;
+    var age = ageHours(a);
+    return age > newestAgeH + 3 && age <= newestAgeH + 9;
+  }).length;
+  var countToday = countBase.filter(function (a) { return (Date.now() - new Date(a.pubDate).getTime()) < 24 * 3600000; }).length;
+  var countTrending = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 4; }).length;
+  var countBreaking = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 12; }).length;
+  var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
+  var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
+
   function toggleArticle(article) {
     var aid = articleId(article);
     var exists = orderedSelection.find(function (a) { return articleId(a) === aid; });
@@ -331,6 +347,23 @@ export default function Home() {
   function isSelected(article) { var aid = articleId(article); return !!orderedSelection.find(function (a) { return articleId(a) === aid; }); }
   function removeFromSelection(article) { var aid = articleId(article); setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; })); }
   function selectTop(n) { var sel = filteredArticles.slice(0, n); setOrderedSelection(sel); }
+
+  // Apply the auto-ranker's lineup. route.js scores every article
+  // (freshness x tier x topic-heat), gates out anything stale, and returns
+  // the top 10 as `autoLineup` ordered by autoRank. We match those back to
+  // the full article objects by link and load them into the selection in
+  // rank order — the user then reviews/tweaks instead of hunting.
+  function applyAutoLineup() {
+    if (!autoLineup || autoLineup.length === 0) return;
+    var byLink = {};
+    articles.forEach(function (a) { byLink[a.link] = a; });
+    var sel = autoLineup
+      .slice()
+      .sort(function (a, b) { return (a.autoRank || 0) - (b.autoRank || 0); })
+      .map(function (p) { return byLink[p.link]; })
+      .filter(Boolean);
+    setOrderedSelection(sel);
+  }
 
   // === PUBLISH WORKFLOW ===
   function buildNewsletterTitle() {
@@ -682,6 +715,15 @@ export default function Home() {
                       })()}
                     </div>
                     <div style={{ display: "flex", gap: 5 }}>
+                      <button onClick={applyAutoLineup} disabled={!autoLineup || autoLineup.length === 0}
+                        title="Load the ranker's freshness-gated top 10 — review and tweak before publishing"
+                        style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid #15803d",
+                          background: (!autoLineup || autoLineup.length === 0) ? "rgba(21,128,61,0.15)" : "linear-gradient(135deg, #15803d, #22c55e)",
+                          color: (!autoLineup || autoLineup.length === 0) ? "#4b5563" : "#fff",
+                          fontSize: 11, fontWeight: 700,
+                          cursor: (!autoLineup || autoLineup.length === 0) ? "default" : "pointer" }}>
+                        {"\u2728 Auto-pick 10" + (autoLineup && autoLineup.length ? "" : " \u2014 \u2026")}
+                      </button>
                       <button onClick={function () { selectTop(10); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(21,128,61,0.3)", background: "transparent", color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Top 10</button>
                       <button onClick={function () { selectTop(filteredArticles.length); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(21,128,61,0.3)", background: "transparent", color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>All</button>
                       <button onClick={function () { setOrderedSelection([]); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear</button>
