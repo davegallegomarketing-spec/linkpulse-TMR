@@ -286,12 +286,27 @@ export default function Home() {
   var filteredArticles = filterCategory === "All" ? articles : articles.filter(function (a) { return a.feedCategory === filterCategory; });
   if (filterTime !== "all" && filterTime !== "trending" && filterTime !== "breaking" && filterTime !== "siren") {
     var now = Date.now();
+    // NEW/HOT filters are RELATIVE — anchored to the freshest article in the
+    // feed — so they MATCH the countNew/countHot pill badges. Previously these
+    // used fixed absolute windows (<3h / 3-8h): on a quiet news day the pill
+    // would read "NEW 4" but clicking it returned nothing, because nothing was
+    // under an absolute 3h. 24h/48h stay absolute (genuine "today"/"two days").
+    var filterAnchorH = (function () {
+      var min = Infinity;
+      articles.forEach(function (a) {
+        if (!a.pubDate) return;
+        var h = (now - new Date(a.pubDate).getTime()) / 3600000;
+        if (h >= 0 && h < min) min = h;
+      });
+      return min === Infinity ? 0 : min;
+    })();
     filteredArticles = filteredArticles.filter(function (a) {
-      var age = now - new Date(a.pubDate).getTime();
-      if (filterTime === "3h") return age < 3 * 3600000;
-      if (filterTime === "8h") return age >= 3 * 3600000 && age < 8 * 3600000;
-      if (filterTime === "24h") return age < 24 * 3600000;
-      if (filterTime === "48h") return age < 48 * 3600000;
+      if (!a.pubDate) return false;
+      var ageH = (now - new Date(a.pubDate).getTime()) / 3600000;
+      if (filterTime === "3h") return ageH <= filterAnchorH + 3;
+      if (filterTime === "8h") return ageH > filterAnchorH + 3 && ageH <= filterAnchorH + 9;
+      if (filterTime === "24h") return ageH < 24;
+      if (filterTime === "48h") return ageH < 48;
       return true;
     });
   }
