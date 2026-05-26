@@ -535,9 +535,10 @@ export default function Home() {
       +       '<div style="width:60px;height:2px;background:linear-gradient(to right,transparent,#b8860b,transparent);margin:10px auto 8px"></div>'
       +       '<div style="font-family:Trebuchet MS,Helvetica,sans-serif;font-size:11px;color:rgba(245,240,232,0.4);letter-spacing:0.04em">' + today + '</div>'
       +     '</td></tr>'
-      // TAGLINE STRIP
-      +     '<tr><td style="padding:18px 32px;background:#f5f0e8;border-bottom:1px solid #d4c9a8">'
-      +       '<div style="font-family:Georgia,serif;font-size:14px;font-style:italic;color:#5a5243;line-height:1.6;text-align:center">The stories worth talking about on the first tee.</div>'
+      // TAGLINE STRIP — TMR branding + clear "you're going to the TMR site" CTA
+      +     '<tr><td style="padding:22px 32px;background:#f5f0e8;border-bottom:1px solid #d4c9a8;text-align:center">'
+      +       '<div style="font-family:Georgia,serif;font-size:15px;color:#5a5243;line-height:1.65;max-width:460px;margin:0 auto 16px">Your daily golf briefing is ready. The Mulligan Report is your caddie for everything golf &mdash; we pull the best stories, gear reviews, and instruction from across the web so you never waste time searching again.</div>'
+      +       '<a href="https://themulliganreport.com/" target="_blank" rel="noopener" style="display:inline-block;font-family:Trebuchet MS,Helvetica,sans-serif;font-size:13px;font-weight:700;letter-spacing:0.04em;color:#0f2b1f;background:#b8860b;padding:11px 26px;border-radius:3px;text-decoration:none">Experience The Mulligan Report &rarr;</a>'
       +     '</td></tr>'
       // STORIES
       +     storyBlocks
