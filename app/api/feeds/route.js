@@ -303,6 +303,148 @@ function freshnessOf(isoDate, feedIndex) {
   return "evergreen"; // older — useful filler, not headline material
 }
 
+/**
+ * ===========================================================================
+ * AUTO-RANKER
+ * ===========================================================================
+ * The daily job: out of ~350 articles, the user hand-picks 10 for The
+ * Mulligan Report, 3x/day. The ranker does the first pass — it scores every
+ * article and pre-selects a top 10, so the user reviews/tweaks instead of
+ * hunting. They keep final say; this just removes the needle-in-haystack step.
+ *
+ * SCORE = freshness + tier + topicHeat  (0-100ish, higher = stronger pick)
+ *
+ *   freshness  — the north star ("the game is keep current"). Weighted
+ *                heaviest. A "position"-confidence article (date guessed
+ *                from feed slot, not parsed) takes a small haircut so a
+ *                KNOWN recent timestamp always beats a GUESSED one.
+ *   tier       — pro journalism over community blogs for a newsletter.
+ *   topicHeat  — how headline-worthy the category is, plus a small bump
+ *                for breaking-news words in the title.
+ *
+ * HARD FRESHNESS GATE: an "evergreen" article can never be auto-selected,
+ * no matter how high it otherwise scores. Nothing stale slips into the
+ * lineup. The auto-10 is drawn only from "fresh" + "recent".
+ */
+const FRESHNESS_POINTS = { fresh: 50, recent: 28, evergreen: 6 };
+const TIER_POINTS = { pro: 25, community: 12 };
+
+// Category heat — how likely a category is to carry headline news.
+const TOPIC_HEAT = {
+  "Tour News": 25,
+  LPGA: 22,
+  "European Tour": 20,
+  "Senior Golf": 16,
+  Industry: 15,
+  Reviews: 14,
+  Equipment: 13,
+  Instruction: 11,
+  Travel: 10,
+  Community: 10,
+  "Mental Game": 8,
+  Fashion: 8,
+};
+
+// Breaking-news signals in a title — a small, capped bonus on top of heat.
+const BREAKING_RE = new RegExp(
+  "(^|[^a-z])(" +
+    [
+      "wins", "win", "won", "victory", "champion", "clinches", "seals",
+      "withdraws", "withdrawal", "injured", "injury", "leads", "leader",
+      "shoots", "card", "cards", "breaks", "record", "announces", "announced",
+      "signs", "joins", "results", "final round", "playoff", "disqualified",
+    ].join("|") +
+    ")([^a-z]|$)",
+  "i"
+);
+
+/**
+ * Score a single article. Pure function of the article's own fields —
+ * no external state — so it's trivially testable.
+ */
+function scoreArticle(article) {
+  let freshness = FRESHNESS_POINTS[article.freshness] || 0;
+  // Haircut for position-inferred dates: keep them in contention but never
+  // let a guess outrank a known timestamp of the same tier.
+  if (article.dateConfidence === "position") freshness *= 0.85;
+
+  const tier = TIER_POINTS[article.tier] || TIER_POINTS.community;
+  let topicHeat = TOPIC_HEAT[article.feedCategory] != null ? TOPIC_HEAT[article.feedCategory] : 10;
+  if (BREAKING_RE.test(article.title || "")) topicHeat += 8;
+
+  const total = freshness + tier + topicHeat;
+  return {
+    total: Math.round(total * 10) / 10,
+    freshness: Math.round(freshness * 10) / 10,
+    tier,
+    topicHeat,
+  };
+}
+
+/**
+ * Rank all articles and pick the auto-lineup.
+ *
+ * Returns the articles array with each article carrying a `rank` object
+ * { score, breakdown, autoPick, autoRank }, plus a separate ordered list of
+ * the picked article links.
+ *
+ *   - HARD GATE: only "fresh" / "recent" articles are eligible. "evergreen"
+ *     gets a score (for transparency) but autoPick is always false.
+ *   - DIVERSITY CAP: at most `perCategoryCap` from any one category, so the
+ *     lineup isn't 10 driver reviews. The user wanted the ~15 subcategories
+ *     kept distinct — this makes the auto-pick honour that spread.
+ */
+function rankArticles(articles, limit = 10, perCategoryCap = 3) {
+  // Score everything.
+  articles.forEach((a) => {
+    const s = scoreArticle(a);
+    a.rank = {
+      score: s.total,
+      breakdown: { freshness: s.freshness, tier: s.tier, topicHeat: s.topicHeat },
+      autoPick: false,
+      autoRank: null,
+    };
+  });
+
+  // Eligible = passes the hard freshness gate. Sorted strongest-first;
+  // ties broken by a known date being newer (exact dates only).
+  const eligible = articles
+    .filter((a) => a.freshness === "fresh" || a.freshness === "recent")
+    .sort((a, b) => {
+      if (b.rank.score !== a.rank.score) return b.rank.score - a.rank.score;
+      const at = a.pubDate ? new Date(a.pubDate).getTime() : 0;
+      const bt = b.pubDate ? new Date(b.pubDate).getTime() : 0;
+      return bt - at;
+    });
+
+  // Walk the sorted list, taking the top `limit` while respecting the
+  // per-category cap.
+  const perCat = {};
+  const picked = [];
+  for (const a of eligible) {
+    if (picked.length >= limit) break;
+    const c = a.feedCategory || "Tour News";
+    if ((perCat[c] || 0) >= perCategoryCap) continue;
+    perCat[c] = (perCat[c] || 0) + 1;
+    a.rank.autoPick = true;
+    a.rank.autoRank = picked.length + 1;
+    picked.push(a);
+  }
+
+  return {
+    picks: picked.map((a) => ({
+      autoRank: a.rank.autoRank,
+      title: a.title,
+      link: a.link,
+      feedName: a.feedName,
+      feedCategory: a.feedCategory,
+      freshness: a.freshness,
+      score: a.rank.score,
+    })),
+    eligibleCount: eligible.length,
+  };
+}
+
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
@@ -422,8 +564,15 @@ export async function GET(request) {
     return score(b) - score(a);
   });
 
+  // --- Auto-ranking pass ---------------------------------------------------
+  // Score every article and pre-select the top 10 (hard freshness gate +
+  // per-category diversity cap). Each article gains a `rank` field; the
+  // chosen lineup is returned separately as `autoLineup`.
+  const ranking = rankArticles(articles, 10, 3);
+
   const payload = {
     articles,
+    autoLineup: ranking.picks,
     errors,
     total: articles.length,
     sources: GOLF_FEEDS.length,
@@ -453,6 +602,19 @@ export async function GET(request) {
       proArticles: articles.filter((a) => a.tier === "pro").length,
       communityArticles: articles.filter((a) => a.tier === "community").length,
       freshArticles: articles.filter((a) => a.freshness === "fresh").length,
+      // Auto-ranker: how many articles cleared the freshness gate and were
+      // eligible for the lineup, and what the cut-off score ended up being.
+      ranker: {
+        eligibleArticles: ranking.eligibleCount,
+        autoPicked: ranking.picks.length,
+        lineupScoreRange: ranking.picks.length
+          ? {
+              top: ranking.picks[0].score,
+              cutoff: ranking.picks[ranking.picks.length - 1].score,
+            }
+          : null,
+        positionDatedInLineup: ranking.picks.filter((p) => p.freshness === "recent").length,
+      },
       categoryBreakdown: byCategory,
       brokenList: errors.map((e) => ({ name: e.error, category: e.category, url: e.url, error: e.message })),
     };
