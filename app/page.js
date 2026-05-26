@@ -263,6 +263,42 @@ export default function Home() {
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
   var _pub = useState(false), publishing = _pub[0], setPublishing = _pub[1];
   var _pubResult = useState(null), pubResult = _pubResult[0], setPubResult = _pubResult[1];
+  // Links of articles already published — these are removed from the fetch
+  // list entirely so they can't be re-picked. Sourced from /api/published
+  // (Blob-backed), so it survives page refreshes and new tabs — not just
+  // the current session.
+  var _sent = useState({}), sentLinks = _sent[0], setSentLinks = _sent[1];
+
+  // Pull every already-published article from the published editions —
+  // both exact LINKS and STORY KEYS (subject+event). Story keys let us hide
+  // an article whose story was already published even from another source
+  // (e.g. publish the ESPN Clark win, the BBC/Sky versions also drop out).
+  // Returns { links: {...}, stories: {...} }. Fails soft — if the endpoint
+  // is down we just don't filter, rather than break the whole feed.
+  async function fetchPublishedSets() {
+    var links = {}, stories = {};
+    try {
+      var res = await fetch("/api/published?history=true&t=" + Date.now());
+      if (!res.ok) return { links: links, stories: stories };
+      var data = await res.json();
+      var editions = (data && data.editions) || [];
+      await Promise.all(editions.map(async function (ed) {
+        try {
+          var r = await fetch("/api/published?key=" + encodeURIComponent(ed.key) + "&t=" + Date.now());
+          if (!r.ok) return;
+          var full = await r.json();
+          ((full && full.articles) || []).forEach(function (a) {
+            if (!a) return;
+            if (a.link) links[a.link] = true;
+            // storyKey may be absent on older editions published before this
+            // feature — that's fine, link-filtering still covers those.
+            if (a.storyKey) stories[a.storyKey] = true;
+          });
+        } catch (e) { /* skip this edition, keep going */ }
+      }));
+    } catch (e) { /* endpoint unavailable — return whatever we have */ }
+    return { links: links, stories: stories };
+  }
 
   var loadFeeds = useCallback(async function () {
     setLoading(true); setError(null);
@@ -270,9 +306,22 @@ export default function Home() {
       var res = await fetch("/api/feeds?t=" + Date.now());
       if (!res.ok) throw new Error("HTTP " + res.status);
       var data = await res.json();
-      setArticles(data.articles || []);
-      setAutoLineup(data.autoLineup || []);
-      setFetchMeta({ total: data.total, sources: data.sources, errors: data.errors || [], fetchedAt: data.fetchedAt });
+      var pub = await fetchPublishedSets();
+      setSentLinks(pub.links);
+      // Remove already-published articles from the fetch list — by exact link
+      // OR by story key (so the same story from another source also drops).
+      function isPublished(a) {
+        if (pub.links[a.link]) return true;
+        if (a.storyKey && pub.stories[a.storyKey]) return true;
+        return false;
+      }
+      var fresh = (data.articles || []).filter(function (a) { return !isPublished(a); });
+      setArticles(fresh);
+      setAutoLineup((data.autoLineup || []).filter(function (p) {
+        // autoLineup entries carry link; match on link (storyKey not in lineup).
+        return !pub.links[p.link];
+      }));
+      setFetchMeta({ total: fresh.length, sources: data.sources, errors: data.errors || [], fetchedAt: data.fetchedAt });
     } catch (err) { setError(err.message); }
     setLoading(false);
   }, []);
@@ -376,7 +425,7 @@ export default function Home() {
       .slice()
       .sort(function (a, b) { return (a.autoRank || 0) - (b.autoRank || 0); })
       .map(function (p) { return byLink[p.link]; })
-      .filter(Boolean);
+      .filter(function (a) { return a && !sentLinks[a.link]; });
     setOrderedSelection(sel);
   }
 
@@ -570,6 +619,29 @@ export default function Home() {
         results.website = true;
       } catch (e) { results.error = "Site publish failed: " + e.message; }
       setPubResult(results);
+      // On a successful site publish: remove the published articles from the
+      // fetch list immediately — by link AND by story key, so the same story
+      // from another source also disappears. The next loadFeeds re-confirms
+      // this via /api/published; this just makes it instant.
+      if (results.website) {
+        var pubLinks = {}, pubStories = {};
+        orderedSelection.forEach(function (a) {
+          pubLinks[a.link] = true;
+          if (a.storyKey) pubStories[a.storyKey] = true;
+        });
+        setSentLinks(Object.assign({}, sentLinks, pubLinks));
+        setArticles(function (prev) {
+          return prev.filter(function (a) {
+            if (pubLinks[a.link]) return false;
+            if (a.storyKey && pubStories[a.storyKey]) return false;
+            return true;
+          });
+        });
+        setAutoLineup(function (prev) {
+          return prev.filter(function (p) { return !pubLinks[p.link]; });
+        });
+        setOrderedSelection([]);
+      }
     } catch (err) {
       results.error = err.message;
       setPubResult(results);
@@ -760,7 +832,7 @@ export default function Home() {
                     var sel = isSelected(article);
                     var aid = articleId(article);
                     var orderNum = sel ? orderedSelection.findIndex(function (a) { return articleId(a) === aid; }) + 1 : null;
-                    return <ArticleCard key={aid} article={article} selected={sel} isSent={false} trendScore={trendScores[aid] || null} orderNum={orderNum} newestAgeH={newestAgeH} onToggle={function () { toggleArticle(article); }} />;
+                    return <ArticleCard key={aid} article={article} selected={sel} isSent={!!sentLinks[article.link]} trendScore={trendScores[aid] || null} orderNum={orderNum} newestAgeH={newestAgeH} onToggle={function () { toggleArticle(article); }} />;
                   })}
                 </div>
               )}
