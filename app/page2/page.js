@@ -759,11 +759,21 @@ export default function Home() {
       // from another source also disappears. The next loadFeeds re-confirms
       // this via /api/published; this just makes it instant.
       if (results.website) {
-        // Snapshot what we just published so the post-publish Download
-        // AWeber button still works after orderedSelection is cleared.
+        // Snapshot what we just published (full edition: features + blocks) so
+        // the post-publish Download AWeber button reflects exactly what went out.
         setLastPublished({ articles: orderedSelection.slice(), title: title });
+
+        // When Features are locked, this is a "rotate the blocks, keep the
+        // heroes" publish: only the BLOCK stories get consumed (marked sent +
+        // removed from the feed). The two locked features stay available and
+        // stay in the panel, so you can immediately load new #3/#4/#5… and
+        // publish again without ever disturbing #1/#2 on the site or email.
+        // When NOT locked, every article is consumed and the panel clears
+        // (the original fresh-edition behavior).
+        var consumed = featuresLocked ? orderedSelection.slice(FEATURE_COUNT) : orderedSelection;
+
         var pubLinks = {}, pubStories = {};
-        orderedSelection.forEach(function (a) {
+        consumed.forEach(function (a) {
           pubLinks[a.link] = true;
           if (a.storyKey) pubStories[a.storyKey] = true;
         });
@@ -778,8 +788,13 @@ export default function Home() {
         setAutoLineup(function (prev) {
           return prev.filter(function (p) { return !pubLinks[p.link]; });
         });
-        setOrderedSelection([]);
-        setFeaturesLocked(false); // next edition starts fresh
+
+        if (featuresLocked) {
+          // Keep the two features in place, still locked; clear only blocks.
+          setOrderedSelection(orderedSelection.slice(0, FEATURE_COUNT));
+        } else {
+          setOrderedSelection([]); // next edition starts fresh
+        }
       }
     } catch (err) {
       results.error = err.message;
@@ -1016,7 +1031,13 @@ export default function Home() {
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}>
                   {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-                  {publishing ? "Publishing\u2026" : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories")}
+                  {publishing
+                    ? "Publishing\u2026"
+                    : (featuresLocked
+                        ? "\uD83D\uDE80 Publish \u2014 keep 2 features, "
+                            + Math.max(0, orderedSelection.length - FEATURE_COUNT)
+                            + " new " + (orderedSelection.length - FEATURE_COUNT === 1 ? "story" : "stories")
+                        : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories"))}
                 </button>
                 <button onClick={function () { downloadAweberHTML(); }} style={{
                   width: "100%", marginTop: 8, padding: "10px 14px", borderRadius: 10,
@@ -1028,7 +1049,9 @@ export default function Home() {
                   {"\u2B07 Download AWeber HTML"}
                 </button>
                 <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
-                  Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report
+                  {featuresLocked
+                    ? "Heroes #1 & #2 stay put \u00B7 only the block stories update on the site & email"
+                    : <>Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report</>}
                 </div>
               </div>
             )}
