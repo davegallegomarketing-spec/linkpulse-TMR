@@ -97,12 +97,6 @@ const GOLF_FEEDS = [
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News", tier: "pro" },
   { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News", tier: "pro" },
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News", tier: "pro" },
-  // Bunkered (Scotland) — a major outlet NOT otherwise in this list, with an
-  // active LIV Golf section, so it adds genuinely new coverage. Note: Bunkered
-  // runs bot protection; the USER_AGENTS rotation above is meant to get past
-  // it, but if it can't, this feed self-reports in `errors` / the "unavailable"
-  // panel and is skipped harmlessly. Watch ?verbose=true after deploy.
-  { name: "Bunkered", url: "https://www.bunkered.co.uk/feed", category: "Tour News", tier: "pro" },
 
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment", tier: "pro" },
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment", tier: "community" },
@@ -827,10 +821,27 @@ function applyResult(article, entry, diag) {
   }
 }
 
-export async function GET(request) {
-  const url = new URL(request.url);
-  const verbose = url.searchParams.get("verbose") === "true";
+// ---------------------------------------------------------------------------
+// RESULT CACHE (cost control)
+// ---------------------------------------------------------------------------
+// The front end refreshes with a cache-busting ?t=... param, several people
+// may load at once, and EACH request would otherwise re-fetch every feed and
+// re-pay Claude to classify ~100 articles. We cache the finished, classified
+// result in module memory for a short TTL, so within that window every refresh
+// — normal OR ?verbose=true — is served for $0 and instantly. After the TTL the
+// next request rebuilds once and the cache refills.
+//   - Tune CACHE_TTL_MS (higher = cheaper, slightly staler feed).
+//   - Append ?force=true to bypass and force a fresh rebuild on demand.
+// NOTE: module memory on Vercel is per-warm-instance and wiped on cold start,
+// so this collapses bursts of refreshes into one rebuild (where today's spend
+// came from) but can't zero out cost. For a hard cross-instance cache, persist
+// _coreCache to Vercel Blob / KV later.
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+let _coreCache = { at: 0, core: null };
 
+// The expensive work: fetch all feeds, categorize, run the Haiku brain, rank.
+// Returns a plain object that GET turns into the (normal or verbose) payload.
+async function computeFeedCore() {
   let undatedCount = 0;
 
   const results = await Promise.allSettled(
@@ -941,6 +952,25 @@ export async function GET(request) {
   // chosen lineup is returned separately as `autoLineup`.
   const ranking = rankArticles(articles, 10, 3);
 
+  return { articles, errors, undatedCount, llmDiag, ranking, builtAt: new Date().toISOString() };
+}
+
+export async function GET(request) {
+  const url = new URL(request.url);
+  const verbose = url.searchParams.get("verbose") === "true";
+  const force = url.searchParams.get("force") === "true";
+
+  // Serve from the result cache unless it's stale or a rebuild was forced.
+  let cacheState;
+  if (!force && _coreCache.core && Date.now() - _coreCache.at < CACHE_TTL_MS) {
+    cacheState = "hit";
+  } else {
+    _coreCache = { at: Date.now(), core: await computeFeedCore() };
+    cacheState = force ? "forced" : "miss";
+  }
+  const core = _coreCache.core;
+  const { articles, errors, undatedCount, llmDiag, ranking } = core;
+
   const payload = {
     articles,
     autoLineup: ranking.picks,
@@ -948,7 +978,10 @@ export async function GET(request) {
     total: articles.length,
     sources: GOLF_FEEDS.length,
     llm: llmDiag,
-    fetchedAt: new Date().toISOString(),
+    // Cache transparency: "hit" = served free from memory (no feeds, no Claude),
+    // "miss"/"forced" = freshly rebuilt. ageMs is how old the cached build is.
+    cache: { state: cacheState, ageMs: Date.now() - _coreCache.at, ttlMs: CACHE_TTL_MS },
+    fetchedAt: core.builtAt,
   };
 
   if (verbose) {
