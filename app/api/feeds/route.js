@@ -97,6 +97,12 @@ const GOLF_FEEDS = [
   { name: "BBC Golf", url: "https://feeds.bbci.co.uk/sport/golf/rss.xml", category: "Tour News", tier: "pro" },
   { name: "ESPN Golf", url: "https://www.espn.com/espn/rss/golf/news", category: "Tour News", tier: "pro" },
   { name: "Sky Sports Golf", url: "https://www.skysports.com/rss/12176", category: "Tour News", tier: "pro" },
+  // Bunkered (Scotland) — a major outlet NOT otherwise in this list, with an
+  // active LIV Golf section, so it adds genuinely new coverage. Note: Bunkered
+  // runs bot protection; the USER_AGENTS rotation above is meant to get past
+  // it, but if it can't, this feed self-reports in `errors` / the "unavailable"
+  // panel and is skipped harmlessly. Watch ?verbose=true after deploy.
+  { name: "Bunkered", url: "https://www.bunkered.co.uk/feed", category: "Tour News", tier: "pro" },
 
   { name: "GolfWRX", url: "https://www.golfwrx.com/feed/", category: "Equipment", tier: "pro" },
   { name: "GolfHQ", url: "https://golfhq.com/blogs/blog.atom", category: "Equipment", tier: "community" },
@@ -702,8 +708,10 @@ Key rule — LIV:
 
 For everything else pick the single best fit from the remaining categories.
 
+Also write a "summary": ONE clean, neutral sentence (max 25 words) that states what the article is actually about, suitable for a newsletter. Strip any boilerplate such as "The post ... appeared first on ...", site names, "Read more", or marketing fluff. Do not start with "This article". If the description is too thin to summarize, base it on the title.
+
 Respond with ONLY a JSON array, no prose and no markdown fences. Each element must be:
-{"id":"<the id you were given>","category":"<one category from the list>"}`;
+{"id":"<the id you were given>","category":"<one category from the list>","summary":"<one clean sentence>"}`;
 
 async function classifyBatchWithClaude(batch) {
   const userPayload = batch.map((a) => ({
@@ -721,7 +729,7 @@ async function classifyBatchWithClaude(batch) {
     },
     body: JSON.stringify({
       model: LLM_MODEL,
-      max_tokens: 1500,
+      max_tokens: 4000,
       // System prompt is marked for prompt caching: it's identical on every
       // call, so Anthropic caches the prefix and we only pay full price for
       // the (small) per-batch article list. Big saving across refreshes.
@@ -740,7 +748,7 @@ async function classifyBatchWithClaude(batch) {
   const start = text.indexOf("[");
   const end = text.lastIndexOf("]");
   if (start === -1 || end === -1) throw new Error("No JSON array in LLM reply");
-  return JSON.parse(text.slice(start, end + 1)); // [{id, category}]
+  return JSON.parse(text.slice(start, end + 1)); // [{id, category, summary}]
 }
 
 /**
@@ -749,7 +757,7 @@ async function classifyBatchWithClaude(batch) {
  * API key is configured.
  */
 async function enrichWithClaude(articles) {
-  const diag = { enabled: false, eligible: 0, fromCache: 0, classified: 0, overridden: 0, errors: 0 };
+  const diag = { enabled: false, eligible: 0, fromCache: 0, classified: 0, overridden: 0, summarized: 0, errors: 0 };
   if (!process.env.ANTHROPIC_API_KEY) return diag;
   diag.enabled = true;
 
@@ -763,7 +771,7 @@ async function enrichWithClaude(articles) {
     const id = llmKey(a);
     if (llmCache.has(id)) {
       diag.fromCache++;
-      applyCategory(a, llmCache.get(id), diag);
+      applyResult(a, llmCache.get(id), diag);
     } else {
       toClassify.push({ ref: a, id, title: a.title, description: a.description });
     }
@@ -781,13 +789,14 @@ async function enrichWithClaude(articles) {
     batches.map(async (batch) => {
       try {
         const results = await classifyBatchWithClaude(batch);
-        const byId = new Map(results.map((r) => [String(r.id), r.category]));
+        const byId = new Map(results.map((r) => [String(r.id), r]));
         for (const item of batch) {
-          const cat = byId.get(String(item.id));
-          if (cat && VALID_CATEGORIES.has(cat)) {
-            llmCache.set(item.id, cat);
+          const r = byId.get(String(item.id));
+          if (r && VALID_CATEGORIES.has(r.category)) {
+            const entry = { category: r.category, summary: typeof r.summary === "string" ? r.summary.trim() : "" };
+            llmCache.set(item.id, entry);
             diag.classified++;
-            applyCategory(item.ref, cat, diag);
+            applyResult(item.ref, entry, diag);
           }
         }
       } catch (err) {
@@ -800,11 +809,22 @@ async function enrichWithClaude(articles) {
   return diag;
 }
 
-function applyCategory(article, cat, diag) {
-  if (!VALID_CATEGORIES.has(cat)) return;
+// Apply a cached/fresh LLM result {category, summary} to an article. Sets the
+// corrected category and, when a usable summary came back, swaps it in for the
+// raw RSS snippet (kills "The post ... appeared first on ..." boilerplate in
+// both the UI card and the newsletter). Keeps the original summary on
+// `article.summary` too, in case the front end wants it separately.
+function applyResult(article, entry, diag) {
+  const cat = entry && entry.category;
+  if (!cat || !VALID_CATEGORIES.has(cat)) return;
   if (article.feedCategory !== cat) diag.overridden++;
   article.feedCategory = cat;
   article.classifiedBy = "llm";
+  if (entry.summary && entry.summary.length >= 8) {
+    article.summary = entry.summary;
+    article.description = entry.summary; // front end already renders description
+    diag.summarized++;
+  }
 }
 
 export async function GET(request) {
