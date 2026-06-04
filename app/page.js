@@ -332,7 +332,9 @@ export default function Home() {
   }, []);
 
   useEffect(function () { loadFeeds(); }, [loadFeeds]);
-  useEffect(function () { var iv = setInterval(function () { loadFeeds(); }, 15 * 60 * 1000); return function () { clearInterval(iv); }; }, [loadFeeds]);
+  // Auto-refresh timer removed: the feed now loads on open and on the manual
+  // Refresh button only. This stops an idle/open tab from polling /api/feeds
+  // (and re-running the paid classification) around the clock.
 
   var categories = ["All", ...Array.from(new Set(articles.map(function (a) { return a.feedCategory; })))];
   var trendScores = detectTrending(articles);
