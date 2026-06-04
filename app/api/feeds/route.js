@@ -128,6 +128,18 @@ const GOLF_FEEDS = [
 
   { name: "Golf Threads", url: "https://golf-threads.com/feed/", category: "Fashion", tier: "community" },
 
+  // --- LIV Golf -----------------------------------------------------------
+  // There is NO dedicated single-publisher LIV RSS feed: livgolf.com runs on
+  // Next.js + Sanity with no feed, and other outlets' "LIV" pages aren't
+  // syndicated as feeds. Rather than re-add an unverifiable guess (the reason
+  // the old "LIV News" entry was deleted), LIV coverage is gathered a
+  // different way: the categorizer (categorizeArticle) now pulls LIV stories
+  // OUT of the pro feeds already in this list — BBC, Sky, ESPN, Golf.com,
+  // Golf365, National Club Golfer all cover the hot LIV stories — and tags
+  // them category:"LIV" so they collect in the LIV bucket. No aggregator, no
+  // new dependency. If a real LIV publisher feed is ever confirmed, add it
+  // here with category:"LIV" and it will slot straight into that bucket.
+
   // NOTE: Removed Reddit r/golf, Flushing It, The Golf News Net, and the
   // unverifiable replacement guesses (SI Golf, LIV News, Golfweek, etc.).
   // Yardbarker removed — it was leaking MotoGP/NASCAR articles into golf.
@@ -165,6 +177,24 @@ function categorizeArticle(article, feedHintCategory) {
   //     get grabbed by the Equipment rule) ---
   if (has(["senior golf", "for seniors", "senior golfers", "champions tour", "pga tour champions"])) {
     return "Senior Golf";
+  }
+
+  // --- LIV Golf: its own bucket so the "hot" LIV stories are easy to find
+  //     across EVERY feed, not just the dedicated LIV source. Checked early
+  //     so a LIV funding/signing story isn't grabbed by Industry ("signs",
+  //     "new ceo") first. Kept tight: "liv golf" anywhere, or whole-word
+  //     "liv" / a LIV team name in the TITLE. We deliberately DON'T match
+  //     bare player names (Rahm, DeChambeau, Koepka…) — they also play the
+  //     majors, and a major story is not a LIV story. ---
+  if (
+    has(["liv golf", "liv golf league", "liv tour"]) ||
+    titleHas([
+      "liv", "4aces", "crushers gc", "legion xiii", "ripper gc", "rangegoats",
+      "fireballs gc", "smash gc", "stinger gc", "cleeks gc", "iron heads",
+      "torque gc", "hyflyers gc", "majesticks gc",
+    ])
+  ) {
+    return "LIV";
   }
 
   // --- Instruction: how-to, drills, swing/putting tips.
@@ -272,7 +302,16 @@ function categorizeArticle(article, feedHintCategory) {
   }
 
   // --- Default: genuine tournament / player news ---
-  if (feedHintCategory === "European Tour" || feedHintCategory === "Community") {
+  // Honor the feed hint for sources whose whole identity IS a category the
+  // keyword rules can't always infer from a headline — e.g. a LIV recap like
+  // "Niemann edges Gooch in Korea" never contains the word "LIV". The
+  // dedicated LIV feed is tagged category:"LIV", so its un-matched items stay
+  // LIV here instead of defaulting to Tour News.
+  if (
+    feedHintCategory === "European Tour" ||
+    feedHintCategory === "Community" ||
+    feedHintCategory === "LIV"
+  ) {
     return feedHintCategory;
   }
   return "Tour News";
@@ -332,6 +371,7 @@ const TIER_POINTS = { pro: 25, community: 12 };
 // Category heat — how likely a category is to carry headline news.
 const TOPIC_HEAT = {
   "Tour News": 25,
+  LIV: 24, // hot right now — rank LIV stories just below general tour news
   LPGA: 22,
   "European Tour": 20,
   "Senior Golf": 16,
@@ -606,6 +646,167 @@ function normalizeDate(item) {
   return null;
 }
 
+/**
+ * ===========================================================================
+ * LLM ENRICHMENT PASS  ("the Haiku brain")
+ * ===========================================================================
+ * The keyword categorizer (categorizeArticle) is fast and free but matches on
+ * surface tokens, so it MISSES stories whose headline doesn't contain the
+ * tell-tale word — most importantly LIV recaps like "Niemann edges Gooch in
+ * Korea" (a LIV event, LIV players, but the word "LIV" never appears).
+ *
+ * This pass sends the RECENT articles (fresh/recent only — we don't spend
+ * tokens on evergreen filler) to Claude Haiku in small batches and lets it
+ * RE-LABEL them by reading meaning, not keywords. It is purely additive:
+ *   - It only overrides feedCategory when Claude returns a VALID category.
+ *   - Any error / missing key / bad JSON → the article keeps its keyword
+ *     category. The brain can never break or empty the feed.
+ *   - Results are cached by article id, so each article is classified once
+ *     and not re-sent on every refresh (keeps cost at pennies-scale).
+ *
+ * NOTE: this is best-effort caching via an in-process Map. On Vercel it
+ * survives while a lambda stays warm (consecutive refreshes benefit) but is
+ * wiped on cold start. For durable caching across all instances, back
+ * `llmCache` with Vercel KV / Upstash later — same interface.
+ */
+const LLM_MODEL = "claude-haiku-4-5";
+const LLM_BATCH_SIZE = 25;          // articles per Claude call
+const LLM_MAX_ARTICLES = 120;       // hard ceiling per refresh (cost guard)
+const VALID_CATEGORIES = new Set([
+  "LIV", "Tour News", "LPGA", "European Tour", "Senior Golf", "Equipment",
+  "Reviews", "Instruction", "Travel", "Industry", "Mental Game", "Fashion",
+  "Community",
+]);
+
+// articleId -> category. Best-effort, warm-instance cache (see note above).
+const llmCache = new Map();
+
+// Stable per-article key for the cache. Mirrors page.js's articleId(): a real
+// link when present, else feedName+title+pubDate. Defined locally so this pass
+// has no dependency on the front-end module.
+function llmKey(a) {
+  const link = a.link || "";
+  if (link && link !== "#" && link.indexOf("http") === 0) return link;
+  return (a.feedName || "") + "::" + (a.title || "") + "::" + (a.pubDate || "");
+}
+
+const LLM_SYSTEM = `You categorize golf news articles for a newsletter aggregator. For each article you are given an id, title, and short description.
+
+Assign EXACTLY ONE category from this list:
+LIV, Tour News, LPGA, European Tour, Senior Golf, Equipment, Reviews, Instruction, Travel, Industry, Mental Game, Fashion, Community.
+
+Key rule — LIV:
+- Use "LIV" for anything about the LIV Golf League: its tournaments (e.g. LIV Golf Korea, Andalucia), its teams (4Aces, Crushers GC, Legion XIII, Ripper GC, Fireballs GC, Torque GC, Cleeks, HyFlyers, Majesticks, RangeGoats, Iron Heads, Stinger, Southern Guards, OKGC, Korean Golf Club), or league business (funding, signings, defections, schedule).
+- IMPORTANT: tag LIV even when the headline never contains the word "LIV" — e.g. a result/recap of a LIV event, or LIV players competing at a LIV tournament.
+- Do NOT tag something LIV just because a LIV-affiliated player appears at a major championship or a non-LIV event. A U.S. Open or PGA Tour story is not a LIV story.
+
+For everything else pick the single best fit from the remaining categories.
+
+Respond with ONLY a JSON array, no prose and no markdown fences. Each element must be:
+{"id":"<the id you were given>","category":"<one category from the list>"}`;
+
+async function classifyBatchWithClaude(batch) {
+  const userPayload = batch.map((a) => ({
+    id: a.id,
+    title: a.title || "",
+    description: (a.description || "").slice(0, 200),
+  }));
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": process.env.ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: LLM_MODEL,
+      max_tokens: 1500,
+      // System prompt is marked for prompt caching: it's identical on every
+      // call, so Anthropic caches the prefix and we only pay full price for
+      // the (small) per-batch article list. Big saving across refreshes.
+      system: [{ type: "text", text: LLM_SYSTEM, cache_control: { type: "ephemeral" } }],
+      messages: [{ role: "user", content: JSON.stringify(userPayload) }],
+    }),
+  });
+
+  if (!res.ok) throw new Error("Anthropic API HTTP " + res.status);
+  const data = await res.json();
+  const text = (data.content || [])
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  // Be tolerant of stray text around the JSON array.
+  const start = text.indexOf("[");
+  const end = text.lastIndexOf("]");
+  if (start === -1 || end === -1) throw new Error("No JSON array in LLM reply");
+  return JSON.parse(text.slice(start, end + 1)); // [{id, category}]
+}
+
+/**
+ * Enrich `articles` in place. Returns diagnostics so GET can surface them.
+ * Safe to call unconditionally — it no-ops (and reports disabled) when no
+ * API key is configured.
+ */
+async function enrichWithClaude(articles) {
+  const diag = { enabled: false, eligible: 0, fromCache: 0, classified: 0, overridden: 0, errors: 0 };
+  if (!process.env.ANTHROPIC_API_KEY) return diag;
+  diag.enabled = true;
+
+  // Only spend tokens on current material; evergreen filler keeps keywords.
+  const recent = articles.filter((a) => a.freshness === "fresh" || a.freshness === "recent");
+  diag.eligible = recent.length;
+
+  // 1) Serve from cache where we can; collect the rest to classify.
+  const toClassify = [];
+  for (const a of recent) {
+    const id = llmKey(a);
+    if (llmCache.has(id)) {
+      diag.fromCache++;
+      applyCategory(a, llmCache.get(id), diag);
+    } else {
+      toClassify.push({ ref: a, id, title: a.title, description: a.description });
+    }
+  }
+
+  // 2) Cap per-refresh volume, then batch the remainder.
+  const capped = toClassify.slice(0, LLM_MAX_ARTICLES);
+  const batches = [];
+  for (let i = 0; i < capped.length; i += LLM_BATCH_SIZE) {
+    batches.push(capped.slice(i, i + LLM_BATCH_SIZE));
+  }
+
+  // 3) Run batches in parallel; a failed batch just leaves keyword labels.
+  await Promise.all(
+    batches.map(async (batch) => {
+      try {
+        const results = await classifyBatchWithClaude(batch);
+        const byId = new Map(results.map((r) => [String(r.id), r.category]));
+        for (const item of batch) {
+          const cat = byId.get(String(item.id));
+          if (cat && VALID_CATEGORIES.has(cat)) {
+            llmCache.set(item.id, cat);
+            diag.classified++;
+            applyCategory(item.ref, cat, diag);
+          }
+        }
+      } catch (err) {
+        diag.errors++;
+        // swallow — keyword categories already stand for this batch
+      }
+    })
+  );
+
+  return diag;
+}
+
+function applyCategory(article, cat, diag) {
+  if (!VALID_CATEGORIES.has(cat)) return;
+  if (article.feedCategory !== cat) diag.overridden++;
+  article.feedCategory = cat;
+  article.classifiedBy = "llm";
+}
+
 export async function GET(request) {
   const url = new URL(request.url);
   const verbose = url.searchParams.get("verbose") === "true";
@@ -708,6 +909,12 @@ export async function GET(request) {
     return score(b) - score(a);
   });
 
+  // --- LLM enrichment ("the Haiku brain") ----------------------------------
+  // Re-label recent articles by meaning (catches LIV stories the keyword
+  // categorizer misses). Runs BEFORE ranking because category feeds into the
+  // auto-pick. No-ops safely if ANTHROPIC_API_KEY isn't set.
+  const llmDiag = await enrichWithClaude(articles);
+
   // --- Auto-ranking pass ---------------------------------------------------
   // Score every article and pre-select the top 10 (hard freshness gate +
   // per-category diversity cap). Each article gains a `rank` field; the
@@ -720,6 +927,7 @@ export async function GET(request) {
     errors,
     total: articles.length,
     sources: GOLF_FEEDS.length,
+    llm: llmDiag,
     fetchedAt: new Date().toISOString(),
   };
 
