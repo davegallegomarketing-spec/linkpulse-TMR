@@ -22,8 +22,8 @@ var CATEGORY_COLORS = {
 // The first two slots of the published lineup are the "features". On the TMR
 // index they become hero #1 / hero #2 (arts[0] / arts[1]); in the AWeber email
 // they become the full-width hero (list[0]) and the first side story (list[1]).
-// Locking these two slots therefore protects the features in BOTH outputs at
-// once — bulk actions (Auto-pick / Top 10 / All / Clear / reorder) skip them.
+// Each slot is filled only when ACTIVATED; a deactivated slot is empty and the
+// site keeps whatever hero is already live there.
 var FEATURE_COUNT = 2;
 
 function formatDate(d) {
@@ -215,16 +215,16 @@ function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorder
     setDragIdx(null); setOverIdx(null);
   }
 
-  // One hero slot: shows the Activate/Active toggle plus whatever state it's in
-  // (open + empty, open + filled, frozen + filled, or deactivated + empty).
+  // One hero slot: shows the Activate/Active toggle plus its state
+  // (deactivated + empty, active + empty, or active + filled).
   function renderSlot(i) {
     var active = !!activeSlots[i];
     var hero = heroes[i];
-    var bg = active ? "rgba(184,134,11,0.10)" : (hero ? "rgba(184,134,11,0.05)" : "transparent");
+    var bg = active ? "rgba(184,134,11,0.10)" : "transparent";
     var toggleBtn = (
       <button
         onClick={function (e) { e.stopPropagation(); onToggleActive(i); }}
-        title={active ? "Active \u2014 click to deactivate (freezes the hero)" : "Activate slot to add or change hero #" + (i + 1)}
+        title={active ? "Active \u2014 click to deactivate (clears this slot)" : "Activate slot to add hero #" + (i + 1)}
         style={{
           background: active ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
           border: active ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
@@ -236,13 +236,13 @@ function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorder
       </button>
     );
     return (
-      <div key={"slot" + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: (!active && !hero) ? 0.7 : 1 }}>
+      <div key={"slot" + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: active ? 1 : 0.7 }}>
         <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
         <div style={{ flex: 1, minWidth: 0 }}>
-          {hero ? (
+          {(active && hero) ? (
             <>
-              <div style={{ fontSize: 12, fontWeight: 600, color: active ? "#f5deb3" : "#cbb27a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
-              <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + (active ? hero.feedName : "frozen \u00B7 " + hero.feedName)}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#f5deb3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + hero.feedName}</div>
             </>
           ) : (
             <div style={{ fontSize: 11, color: active ? "#d4a017" : "#6b7280", fontStyle: "italic" }}>
@@ -255,9 +255,6 @@ function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorder
           <button onClick={function (e) { e.stopPropagation(); onRemove(hero); }}
             title="Remove this hero (slot stays open)"
             style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>{"\u00D7"}</button>
-        )}
-        {!active && hero && (
-          <span style={{ color: "#d4a017", fontSize: 11, flexShrink: 0 }}>{"\uD83D\uDD12"}</span>
         )}
         {toggleBtn}
       </div>
@@ -339,8 +336,8 @@ export default function Home() {
   // The two hero slots start DEACTIVATED and EMPTY on load. Picks go into the
   // block stories by default. To put a story in hero #1 or #2 you ACTIVATE
   // that slot first (independently), then your next pick fills it. Deactivating
-  // a filled slot freezes its hero (kept, but locked from change). Each slot is
-  // controlled on its own, so you can open #1, or #2, or both.
+  // a slot CLEARS it (empty again). Each slot is controlled on its own, so you
+  // can open #1, or #2, or both.
   var _heroes = useState([null, null]), heroes = _heroes[0], setHeroes = _heroes[1];
   var _blocks = useState([]), blocks = _blocks[0], setBlocks = _blocks[1];
   var _active = useState([false, false]), activeSlots = _active[0], setActiveSlots = _active[1];
@@ -539,18 +536,26 @@ export default function Home() {
   }
 
   // Activate / deactivate a hero slot. Activating opens it for the next pick.
-  // Deactivating freezes whatever hero is in it (kept, but no longer editable).
+  // Deactivating CLEARS the slot (its hero is removed and it goes empty) — a
+  // deactivated slot simply means "I'm not touching this one," and the site
+  // keeps whatever hero is already live there.
   function toggleSlotActive(i) {
+    var turningOff = !!activeSlots[i];
     setActiveSlots(function (prev) {
       var next = prev.slice();
       next[i] = !next[i];
       return next;
     });
+    if (turningOff && heroes[i]) {
+      var nh = heroes.slice();
+      nh[i] = null;
+      setHeroes(nh);
+    }
   }
 
   // Fill from a list of candidate picks: open (active+empty) hero slots first,
-  // in slot order, then everything else into blocks. Frozen/filled heroes are
-  // left untouched.
+  // in slot order, then everything else into blocks. Heroes already placed in
+  // active slots are left untouched.
   function fillFrom(picks) {
     var nh = heroes.slice();
     var used = {};
@@ -568,11 +573,11 @@ export default function Home() {
 
   function selectTop(n) { fillFrom(filteredArticles.slice(0, n)); }
 
-  // Clear: drop all blocks and any hero sitting in an ACTIVE slot. Frozen
-  // heroes (filled + deactivated) are kept — deactivate to protect a hero.
+  // Clear: empty both hero slots and all block stories. (Deactivated slots
+  // are already empty, so there's nothing to "keep" — leave a slot deactivated
+  // to keep its live hero on the site.)
   function clearSelection() {
-    var nh = heroes.map(function (h, i) { return (h && !activeSlots[i]) ? h : null; });
-    setHeroes(nh);
+    setHeroes([null, null]);
     setBlocks([]);
   }
 
@@ -809,14 +814,9 @@ export default function Home() {
         // the post-publish Download AWeber button reflects exactly what went out.
         setLastPublished({ articles: orderedSelection.slice(), title: title });
 
-        // Frozen heroes (filled + deactivated) are "keepers": they stay in the
-        // panel so you can rotate the rest and publish again without disturbing
-        // them. Everything else — active heroes and all blocks — is consumed
-        // (marked sent + pulled from the feed) and the panel resets those.
-        var keepers = heroes.map(function (h, i) { return (h && !activeSlots[i]) ? h : null; });
-        var keeperIds = {};
-        keepers.forEach(function (h) { if (h) keeperIds[articleId(h)] = true; });
-        var consumed = orderedSelection.filter(function (a) { return !keeperIds[articleId(a)]; });
+        // Everything in this edition (heroes + blocks) is consumed — marked
+        // sent and pulled from the feed so it can't be re-picked.
+        var consumed = orderedSelection.slice();
 
         var pubLinks = {}, pubStories = {};
         consumed.forEach(function (a) {
@@ -835,9 +835,12 @@ export default function Home() {
           return prev.filter(function (p) { return !pubLinks[p.link]; });
         });
 
-        // Reset: keep frozen heroes in their slots; clear active heroes + blocks.
-        setHeroes(keepers);
+        // Reset to the clean default: both slots empty and deactivated, no
+        // blocks. The heroes you just published stay live on the site; next
+        // edition you only activate a slot if you want to change one.
+        setHeroes([null, null]);
         setBlocks([]);
+        setActiveSlots([false, false]);
       }
     } catch (err) {
       results.error = err.message;
