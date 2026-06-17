@@ -29,6 +29,14 @@ export async function POST(request) {
     var articles = body.articles;
     var edition = body.edition;
     var title = body.title;
+    // Optional: the hero links for THIS publish, slot-preserving and in hero
+    // order — e.g. [link|null, link|null]. A null means "leave that hero slot
+    // as it is on the site." When this key is PRESENT we use the activation
+    // model below (heroes pinned to the top, existing heroes kept for empty
+    // slots). When it's ABSENT (older caller), we fall back to the original
+    // new-on-top behavior, so nothing else breaks.
+    var hasFeatures = Array.isArray(body.features);
+    var features = hasFeatures ? body.features : [];
 
     if (!articles || !Array.isArray(articles) || articles.length === 0) {
       return new Response(JSON.stringify({ error: "No articles provided" }), {
@@ -58,32 +66,87 @@ export async function POST(request) {
       console.log("[publish] Backup saved:", backupKey, "with", existingArticles.length, "articles");
     }
 
-    // Build lookup of existing links
-    var existingLinks = {};
-    existingArticles.forEach(function (a) { if (a.link) existingLinks[a.link] = true; });
+    // Normalize an incoming article into the stored shape.
+    function normalize(a) {
+      return {
+        position: 0,
+        title: a.title || "",
+        link: a.link || "",
+        description: a.description || "",
+        source: a.feedName || a.source || "",
+        category: a.feedCategory || a.category || "",
+        image: a.image || "",
+        pubDate: a.pubDate || "",
+        addedAt: now.toISOString(),
+      };
+    }
 
-    // Process new articles, skip duplicates
-    var newArticles = [];
-    articles.forEach(function (a) {
-      var link = a.link || "";
-      if (link && !existingLinks[link]) {
-        newArticles.push({
-          position: 0,
-          title: a.title || "",
-          link: link,
-          description: a.description || "",
-          source: a.feedName || a.source || "",
-          category: a.feedCategory || a.category || "",
-          image: a.image || "",
-          pubDate: a.pubDate || "",
-          addedAt: now.toISOString(),
-        });
-        existingLinks[link] = true;
+    // Lookups
+    var existingByLink = {};
+    existingArticles.forEach(function (a) { if (a.link) existingByLink[a.link] = a; });
+    var incomingByLink = {};
+    articles.forEach(function (a) { if (a.link) incomingByLink[a.link] = a; });
+
+    var allArticles;
+
+    if (hasFeatures) {
+      // ═══ ACTIVATION MODEL ═══
+      // The site's current heroes (positions #1 and #2). existingArticles is
+      // already stored in position order, so the first two ARE the live heroes.
+      var existingTop2 = [existingArticles[0] || null, existingArticles[1] || null];
+
+      // Decide the final hero for each slot: the freshly chosen one if the user
+      // set it this publish, otherwise the hero already live in that slot. This
+      // is why untouched heroes never get buried — they're explicitly re-placed
+      // at the top.
+      var heroLinks = [];
+      for (var s = 0; s < 2; s++) {
+        var chosen = features[s];
+        if (chosen) heroLinks.push(chosen);
+        else if (existingTop2[s] && existingTop2[s].link) heroLinks.push(existingTop2[s].link);
       }
-    });
 
-    // New on top, existing below
-    var allArticles = newArticles.concat(existingArticles);
+      // Build hero objects in order, de-duplicated, preferring the fresh copy.
+      var heroSet = {};
+      var heroObjs = [];
+      heroLinks.forEach(function (link) {
+        if (!link || heroSet[link]) return;
+        var src = incomingByLink[link] || existingByLink[link];
+        if (!src) return;
+        heroSet[link] = true;
+        heroObjs.push(incomingByLink[link] ? normalize(src) : src);
+      });
+
+      // New block stories: incoming items that aren't heroes and aren't already
+      // published.
+      var newBlocks = [];
+      articles.forEach(function (a) {
+        var link = a.link || "";
+        if (link && !heroSet[link] && !existingByLink[link]) {
+          newBlocks.push(normalize(a));
+          existingByLink[link] = a; // guard against dupes within this batch
+        }
+      });
+
+      // Everything already published, minus the heroes (which moved to the top).
+      // Any previous hero that got replaced naturally falls back into this pile.
+      var existingRest = existingArticles.filter(function (a) { return !heroSet[a.link]; });
+
+      // Final order: heroes → fresh stories → older pile.
+      allArticles = heroObjs.concat(newBlocks).concat(existingRest);
+    } else {
+      // ═══ LEGACY: new on top, existing below (unchanged) ═══
+      var legacyNew = [];
+      articles.forEach(function (a) {
+        var link = a.link || "";
+        if (link && !existingByLink[link]) {
+          legacyNew.push(normalize(a));
+          existingByLink[link] = a;
+        }
+      });
+      allArticles = legacyNew.concat(existingArticles);
+    }
+
     allArticles.forEach(function (a, i) { a.position = i + 1; });
 
     // ═══ SAFETY CHECK: never write fewer articles than we started with ═══
