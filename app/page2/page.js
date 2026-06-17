@@ -792,7 +792,11 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ articles: orderedSelection, features: featureLinks, edition: "daily", title: title }),
         });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) {
+          var errText = "";
+          try { var ej = await res.json(); errText = ej && ej.error ? ej.error : ""; } catch (e2) {}
+          throw new Error(errText ? (errText) : ("HTTP " + res.status));
+        }
         results.website = true;
       } catch (e) { results.error = "Site publish failed: " + e.message; }
       setPubResult(results);
