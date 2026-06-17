@@ -19,6 +19,13 @@ var CATEGORY_COLORS = {
   Betting: { bg: "#4a3308", text: "#fdba74", icon: "\uD83C\uDFB0" },
 };
 
+// The first two slots of the published lineup are the "features". On the TMR
+// index they become hero #1 / hero #2 (arts[0] / arts[1]); in the AWeber email
+// they become the full-width hero (list[0]) and the first side story (list[1]).
+// Each slot is filled only when ACTIVATED; a deactivated slot is empty and the
+// site keeps whatever hero is already live there.
+var FEATURE_COUNT = 2;
+
 function formatDate(d) {
   if (!d) return "";
   var dt = new Date(d), now = new Date(), diff = now - dt;
@@ -191,58 +198,129 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
   );
 }
 
-function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear }) {
+function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorderBlocks, onRemove, onClear }) {
   var _drag = useState(null), dragIdx = _drag[0], setDragIdx = _drag[1];
   var _over = useState(null), overIdx = _over[0], setOverIdx = _over[1];
 
+  var filledHeroes = heroes.filter(Boolean).length;
+  var total = filledHeroes + blocks.length;
+
+  // Drag reorder applies to BLOCK stories only (heroes live in fixed slots).
   function handleDrop(dropIdx) {
     if (dragIdx === null || dragIdx === dropIdx) { setDragIdx(null); setOverIdx(null); return; }
-    var newOrder = selectedList.slice();
+    var newOrder = blocks.slice();
     var item = newOrder.splice(dragIdx, 1)[0];
     newOrder.splice(dropIdx, 0, item);
-    onReorder(newOrder);
+    onReorderBlocks(newOrder);
     setDragIdx(null); setOverIdx(null);
   }
 
-  if (selectedList.length === 0) {
+  // One hero slot: shows the Activate/Active toggle plus its state
+  // (deactivated + empty, active + empty, or active + filled).
+  function renderSlot(i) {
+    var active = !!activeSlots[i];
+    var hero = heroes[i];
+    var bg = active ? "rgba(184,134,11,0.10)" : "transparent";
+    var toggleBtn = (
+      <button
+        onClick={function (e) { e.stopPropagation(); onToggleActive(i); }}
+        title={active ? "Active \u2014 click to deactivate (clears this slot)" : "Activate slot to add hero #" + (i + 1)}
+        style={{
+          background: active ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
+          border: active ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
+          color: active ? "#4ade80" : "#9ca3af",
+          borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700,
+          cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+        }}>
+        {active ? "\u25CF Active" : "Activate"}
+      </button>
+    );
     return (
-      <div style={{ padding: "40px 16px", textAlign: "center", color: "#4b5563" }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>{"\uD83D\uDCCB"}</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Your lineup</div>
-        <div style={{ fontSize: 11 }}>Select articles from the left to build your newsletter</div>
+      <div key={"slot" + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: active ? 1 : 0.7 }}>
+        <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {(active && hero) ? (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#f5deb3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + hero.feedName}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: active ? "#d4a017" : "#6b7280", fontStyle: "italic" }}>
+              {active ? ("Open \u2014 click a story to set hero #" + (i + 1)) : ("Hero #" + (i + 1) + " \u2014 deactivated")}
+            </div>
+          )}
+        </div>
+        {/* remove (only when the slot is active AND has a hero) */}
+        {active && hero && (
+          <button onClick={function (e) { e.stopPropagation(); onRemove(hero); }}
+            title="Remove this hero (slot stays open)"
+            style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>{"\u00D7"}</button>
+        )}
+        {toggleBtn}
       </div>
     );
   }
 
+  function renderBlockRow(article, bi) {
+    var isOver = overIdx === bi;
+    return (
+      <div key={articleId(article)}
+        draggable
+        onDragStart={function () { setDragIdx(bi); }}
+        onDragOver={function (e) { e.preventDefault(); setOverIdx(bi); }}
+        onDragLeave={function () { setOverIdx(null); }}
+        onDrop={function () { handleDrop(bi); }}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "grab",
+          borderTop: isOver ? "2px solid #4ade80" : "2px solid transparent",
+          background: dragIdx === bi ? "rgba(21,128,61,0.1)" : "transparent", transition: "all 0.1s",
+        }}>
+        <span style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{bi + 1}</span>
+        <div style={{ fontSize: 6, color: "#4b5563", flexShrink: 0, lineHeight: 1, userSelect: "none" }}>{"\u2630"}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{article.title}</div>
+          <div style={{ fontSize: 10, color: "#6b7280" }}>{article.feedName}</div>
+        </div>
+        <button onClick={function (e) { e.stopPropagation(); onRemove(article); }}
+          style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 }}>{"\u00D7"}</button>
+      </div>
+    );
+  }
+
+  var anyActive = activeSlots.some(Boolean);
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{selectedList.length} {selectedList.length === 1 ? "story" : "stories"}</span>
-        <button onClick={onClear} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 11, cursor: "pointer" }}>Clear all</button>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{total} {total === 1 ? "story" : "stories"}</span>
+        <button onClick={onClear} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 11, cursor: "pointer" }}>Clear</button>
       </div>
-      <div style={{ padding: "8px 0" }}>
-        {selectedList.map(function (article, i) {
-          var isOver = overIdx === i;
-          return (
-            <div key={articleId(article)}
-              draggable onDragStart={function () { setDragIdx(i); }} onDragOver={function (e) { e.preventDefault(); setOverIdx(i); }} onDragLeave={function () { setOverIdx(null); }} onDrop={function () { handleDrop(i); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "grab",
-                borderTop: isOver ? "2px solid #4ade80" : "2px solid transparent",
-                background: dragIdx === i ? "rgba(21,128,61,0.1)" : "transparent",
-                transition: "all 0.1s",
-              }}>
-              <span style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{i + 1}</span>
-              <div style={{ fontSize: 6, color: "#4b5563", flexShrink: 0, lineHeight: 1, userSelect: "none" }}>{"\u2630"}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{article.title}</div>
-                <div style={{ fontSize: 10, color: "#6b7280" }}>{article.feedName}</div>
-              </div>
-              <button onClick={function (e) { e.stopPropagation(); onRemove(article); }}
-                style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 }}>{"\u00D7"}</button>
-            </div>
-          );
-        })}
+
+      {/* ── FEATURES (the two heroes — site + email) ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px 6px" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#d4a017", display: "flex", alignItems: "center", gap: 5 }}>
+          {"\u2605"} Features
+        </span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: anyActive ? "#4ade80" : "#4b5563" }}>
+          {anyActive ? "Pick a story \u2192 hero" : "Activate to add"}
+        </span>
+      </div>
+      <div style={{ padding: "0 0 4px" }}>
+        {[0, 1].map(function (i) { return renderSlot(i); })}
+      </div>
+
+      {/* ── BLOCK STORIES (#3, 4, 5 …) ── */}
+      <div style={{ padding: "10px 14px 6px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b7280" }}>
+          Block stories
+        </span>
+      </div>
+      <div style={{ padding: "0 0 8px" }}>
+        {blocks.length === 0 ? (
+          <div style={{ padding: "6px 14px 10px", fontSize: 11, color: "#4b5563", fontStyle: "italic" }}>
+            No block stories yet {"\u2014"} select more on the left.
+          </div>
+        ) : blocks.map(function (article, bi) { return renderBlockRow(article, bi); })}
       </div>
     </div>
   );
@@ -254,7 +332,19 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear }
 export default function Home() {
   var _art = useState([]), articles = _art[0], setArticles = _art[1];
   var _auto = useState([]), autoLineup = _auto[0], setAutoLineup = _auto[1];
-  var _ord = useState([]), orderedSelection = _ord[0], setOrderedSelection = _ord[1];
+  // ── Activation model ──
+  // The two hero slots start DEACTIVATED and EMPTY on load. Picks go into the
+  // block stories by default. To put a story in hero #1 or #2 you ACTIVATE
+  // that slot first (independently), then your next pick fills it. Deactivating
+  // a slot CLEARS it (empty again). Each slot is controlled on its own, so you
+  // can open #1, or #2, or both.
+  var _heroes = useState([null, null]), heroes = _heroes[0], setHeroes = _heroes[1];
+  var _blocks = useState([]), blocks = _blocks[0], setBlocks = _blocks[1];
+  var _active = useState([false, false]), activeSlots = _active[0], setActiveSlots = _active[1];
+  // Canonical ordered list (heroes first, compacted, then blocks). Everything
+  // downstream — the newsletter HTML, the publish payload, the counters — reads
+  // from this, exactly as before.
+  var orderedSelection = heroes.filter(Boolean).concat(blocks);
   var _load = useState(true), loading = _load[0], setLoading = _load[1];
   var _err = useState(null), error = _err[0], setError = _err[1];
   var _fcat = useState("All"), filterCategory = _fcat[0], setFilterCategory = _fcat[1];
@@ -332,9 +422,7 @@ export default function Home() {
   }, []);
 
   useEffect(function () { loadFeeds(); }, [loadFeeds]);
-  // Auto-refresh timer removed: the feed now loads on open and on the manual
-  // Refresh button only. This stops an idle/open tab from polling /api/feeds
-  // (and re-running the paid classification) around the clock.
+  useEffect(function () { var iv = setInterval(function () { loadFeeds(); }, 15 * 60 * 1000); return function () { clearInterval(iv); }; }, [loadFeeds]);
 
   var categories = ["All", ...Array.from(new Set(articles.map(function (a) { return a.feedCategory; })))];
   var trendScores = detectTrending(articles);
@@ -409,21 +497,95 @@ export default function Home() {
   var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
   var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
 
-  function toggleArticle(article) {
+  // ── Activation-model helpers ──
+  function heroIndexOf(article) {
     var aid = articleId(article);
-    var exists = orderedSelection.find(function (a) { return articleId(a) === aid; });
-    if (exists) { setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; })); }
-    else { setOrderedSelection(orderedSelection.concat([article])); }
+    for (var i = 0; i < FEATURE_COUNT; i++) { if (heroes[i] && articleId(heroes[i]) === aid) return i; }
+    return -1;
   }
-  function isSelected(article) { var aid = articleId(article); return !!orderedSelection.find(function (a) { return articleId(a) === aid; }); }
-  function removeFromSelection(article) { var aid = articleId(article); setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; })); }
-  function selectTop(n) { var sel = filteredArticles.slice(0, n); setOrderedSelection(sel); }
+  function isInBlocks(article) {
+    var aid = articleId(article);
+    return blocks.some(function (b) { return articleId(b) === aid; });
+  }
+  function isSelected(article) { return heroIndexOf(article) !== -1 || isInBlocks(article); }
+  function filledHeroCount() { return heroes.filter(Boolean).length; }
+
+  // Clicking an article card:
+  //  • already a hero  → empty that slot (slot stays as-is so you can re-pick)
+  //  • already a block → remove it
+  //  • brand new pick  → drop into the first ACTIVE-but-empty hero slot;
+  //    if no slot is open, it goes to the block stories.
+  function toggleArticle(article) {
+    var hi = heroIndexOf(article);
+    if (hi !== -1) { var nh = heroes.slice(); nh[hi] = null; setHeroes(nh); return; }
+    if (isInBlocks(article)) {
+      var aid = articleId(article);
+      setBlocks(blocks.filter(function (b) { return articleId(b) !== aid; }));
+      return;
+    }
+    var slot = -1;
+    for (var i = 0; i < FEATURE_COUNT; i++) { if (activeSlots[i] && !heroes[i]) { slot = i; break; } }
+    if (slot !== -1) { var nh2 = heroes.slice(); nh2[slot] = article; setHeroes(nh2); }
+    else { setBlocks(blocks.concat([article])); }
+  }
+  function removeFromSelection(article) {
+    var hi = heroIndexOf(article);
+    if (hi !== -1) { var nh = heroes.slice(); nh[hi] = null; setHeroes(nh); return; }
+    var aid = articleId(article);
+    setBlocks(blocks.filter(function (b) { return articleId(b) !== aid; }));
+  }
+
+  // Activate / deactivate a hero slot. Activating opens it for the next pick.
+  // Deactivating CLEARS the slot (its hero is removed and it goes empty) — a
+  // deactivated slot simply means "I'm not touching this one," and the site
+  // keeps whatever hero is already live there.
+  function toggleSlotActive(i) {
+    var turningOff = !!activeSlots[i];
+    setActiveSlots(function (prev) {
+      var next = prev.slice();
+      next[i] = !next[i];
+      return next;
+    });
+    if (turningOff && heroes[i]) {
+      var nh = heroes.slice();
+      nh[i] = null;
+      setHeroes(nh);
+    }
+  }
+
+  // Fill from a list of candidate picks: open (active+empty) hero slots first,
+  // in slot order, then everything else into blocks. Heroes already placed in
+  // active slots are left untouched.
+  function fillFrom(picks) {
+    var nh = heroes.slice();
+    var used = {};
+    nh.forEach(function (h) { if (h) used[articleId(h)] = true; });
+    var queue = picks.filter(function (a) { return a && !used[articleId(a)]; });
+    for (var i = 0; i < FEATURE_COUNT; i++) {
+      if (activeSlots[i] && !nh[i]) {
+        var p = queue.shift();
+        if (p) { nh[i] = p; used[articleId(p)] = true; }
+      }
+    }
+    setHeroes(nh);
+    setBlocks(queue);
+  }
+
+  function selectTop(n) { fillFrom(filteredArticles.slice(0, n)); }
+
+  // Clear: empty both hero slots and all block stories. (Deactivated slots
+  // are already empty, so there's nothing to "keep" — leave a slot deactivated
+  // to keep its live hero on the site.)
+  function clearSelection() {
+    setHeroes([null, null]);
+    setBlocks([]);
+  }
 
   // Apply the auto-ranker's lineup. route.js scores every article
   // (freshness x tier x topic-heat), gates out anything stale, and returns
   // the top 10 as `autoLineup` ordered by autoRank. We match those back to
-  // the full article objects by link and load them into the selection in
-  // rank order — the user then reviews/tweaks instead of hunting.
+  // the full article objects by link and feed them through fillFrom so open
+  // hero slots get filled first, then the rest become block stories.
   function applyAutoLineup() {
     if (!autoLineup || autoLineup.length === 0) return;
     var byLink = {};
@@ -433,7 +595,8 @@ export default function Home() {
       .sort(function (a, b) { return (a.autoRank || 0) - (b.autoRank || 0); })
       .map(function (p) { return byLink[p.link]; })
       .filter(function (a) { return a && !sentLinks[a.link]; });
-    setOrderedSelection(sel);
+    if (sel.length === 0) return;
+    fillFrom(sel);
   }
 
   // === PUBLISH WORKFLOW ===
@@ -611,6 +774,14 @@ export default function Home() {
       var title = buildNewsletterTitle();
       var html = generateNewsletterHTML(title, orderedSelection);
       var plain = generatePlainText(title, orderedSelection);
+
+      // The heroes for THIS publish, in slot order (#1 then #2). A slot the
+      // user never filled is sent as null — the server keeps whatever hero is
+      // already live in that slot, so untouched heroes never get buried.
+      var featureLinks = heroes.map(function (h) { return h ? h.link : null; });
+      var heroIdSet = {};
+      heroes.forEach(function (h) { if (h) heroIdSet[articleId(h)] = true; });
+
       // 1. Copy newsletter HTML to clipboard (rich + plain fallback)
       try {
         var b1 = new Blob([html], { type: "text/html" });
@@ -624,9 +795,13 @@ export default function Home() {
         var res = await fetch("/api/publish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articles: orderedSelection, edition: "daily", title: title }),
+          body: JSON.stringify({ articles: orderedSelection, features: featureLinks, edition: "daily", title: title }),
         });
-        if (!res.ok) throw new Error("HTTP " + res.status);
+        if (!res.ok) {
+          var errText = "";
+          try { var ej = await res.json(); errText = ej && ej.error ? ej.error : ""; } catch (e2) {}
+          throw new Error(errText ? (errText) : ("HTTP " + res.status));
+        }
         results.website = true;
       } catch (e) { results.error = "Site publish failed: " + e.message; }
       setPubResult(results);
@@ -635,11 +810,16 @@ export default function Home() {
       // from another source also disappears. The next loadFeeds re-confirms
       // this via /api/published; this just makes it instant.
       if (results.website) {
-        // Snapshot what we just published so the post-publish Download
-        // AWeber button still works after orderedSelection is cleared.
+        // Snapshot what we just published (full edition: heroes + blocks) so
+        // the post-publish Download AWeber button reflects exactly what went out.
         setLastPublished({ articles: orderedSelection.slice(), title: title });
+
+        // Everything in this edition (heroes + blocks) is consumed — marked
+        // sent and pulled from the feed so it can't be re-picked.
+        var consumed = orderedSelection.slice();
+
         var pubLinks = {}, pubStories = {};
-        orderedSelection.forEach(function (a) {
+        consumed.forEach(function (a) {
           pubLinks[a.link] = true;
           if (a.storyKey) pubStories[a.storyKey] = true;
         });
@@ -654,7 +834,13 @@ export default function Home() {
         setAutoLineup(function (prev) {
           return prev.filter(function (p) { return !pubLinks[p.link]; });
         });
-        setOrderedSelection([]);
+
+        // Reset to the clean default: both slots empty and deactivated, no
+        // blocks. The heroes you just published stay live on the site; next
+        // edition you only activate a slot if you want to change one.
+        setHeroes([null, null]);
+        setBlocks([]);
+        setActiveSlots([false, false]);
       }
     } catch (err) {
       results.error = err.message;
@@ -835,7 +1021,7 @@ export default function Home() {
                       </button>
                       <button onClick={function () { selectTop(10); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(21,128,61,0.3)", background: "transparent", color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Top 10</button>
                       <button onClick={function () { selectTop(filteredArticles.length); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(21,128,61,0.3)", background: "transparent", color: "#4ade80", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>All</button>
-                      <button onClick={function () { setOrderedSelection([]); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear</button>
+                      <button onClick={function () { clearSelection(); }} style={{ padding: "6px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#6b7280", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Clear</button>
                     </div>
                   </div>
                 </div>
@@ -873,11 +1059,13 @@ export default function Home() {
         {!loading && (
           <div style={{ width: 280, flexShrink: 0, borderLeft: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)", minHeight: "calc(100vh - 120px)", position: "sticky", top: 0, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
             <SelectionPanel
-              selectedList={orderedSelection}
-              articles={articles}
-              onReorder={function (newOrder) { setOrderedSelection(newOrder); }}
+              heroes={heroes}
+              blocks={blocks}
+              activeSlots={activeSlots}
+              onToggleActive={function (i) { toggleSlotActive(i); }}
+              onReorderBlocks={function (newBlocks) { setBlocks(newBlocks); }}
               onRemove={function (article) { removeFromSelection(article); }}
-              onClear={function () { setOrderedSelection([]); }}
+              onClear={function () { clearSelection(); }}
             />
             {orderedSelection.length > 0 && (
               <div style={{ padding: "14px 14px 18px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
@@ -889,7 +1077,13 @@ export default function Home() {
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}>
                   {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
-                  {publishing ? "Publishing\u2026" : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories")}
+                  {publishing
+                    ? "Publishing\u2026"
+                    : (filledHeroCount() > 0
+                        ? "\uD83D\uDE80 Publish \u2014 " + filledHeroCount()
+                            + (filledHeroCount() === 1 ? " hero + " : " heroes + ")
+                            + blocks.length + " " + (blocks.length === 1 ? "story" : "stories")
+                        : "\uD83D\uDE80 Publish " + blocks.length + " " + (blocks.length === 1 ? "story" : "stories"))}
                 </button>
                 <button onClick={function () { downloadAweberHTML(); }} style={{
                   width: "100%", marginTop: 8, padding: "10px 14px", borderRadius: 10,
@@ -901,7 +1095,9 @@ export default function Home() {
                   {"\u2B07 Download AWeber HTML"}
                 </button>
                 <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
-                  Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report
+                  {filledHeroCount() > 0
+                    ? (filledHeroCount() === 1 ? "Your hero is" : "Your heroes are") + " pinned to the top \u00B7 stories fill in below"
+                    : "Heroes on the site stay as-is \u00B7 new stories slot in below them"}
                 </div>
               </div>
             )}
