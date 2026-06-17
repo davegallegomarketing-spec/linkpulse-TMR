@@ -198,82 +198,105 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
   );
 }
 
-function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear, featuresLocked, onToggleLock }) {
+function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorderBlocks, onRemove, onClear }) {
   var _drag = useState(null), dragIdx = _drag[0], setDragIdx = _drag[1];
   var _over = useState(null), overIdx = _over[0], setOverIdx = _over[1];
 
-  // dragIdx / overIdx are ABSOLUTE indices into selectedList. When locked, a
-  // drop is rejected if either end touches a feature slot (< FEATURE_COUNT),
-  // so the two heroes can never be reordered out of place by accident.
+  var filledHeroes = heroes.filter(Boolean).length;
+  var total = filledHeroes + blocks.length;
+
+  // Drag reorder applies to BLOCK stories only (heroes live in fixed slots).
   function handleDrop(dropIdx) {
     if (dragIdx === null || dragIdx === dropIdx) { setDragIdx(null); setOverIdx(null); return; }
-    if (featuresLocked && (dragIdx < FEATURE_COUNT || dropIdx < FEATURE_COUNT)) { setDragIdx(null); setOverIdx(null); return; }
-    var newOrder = selectedList.slice();
+    var newOrder = blocks.slice();
     var item = newOrder.splice(dragIdx, 1)[0];
     newOrder.splice(dropIdx, 0, item);
-    onReorder(newOrder);
+    onReorderBlocks(newOrder);
     setDragIdx(null); setOverIdx(null);
   }
 
-  if (selectedList.length === 0) {
+  // One hero slot: shows the Activate/Active toggle plus whatever state it's in
+  // (open + empty, open + filled, frozen + filled, or deactivated + empty).
+  function renderSlot(i) {
+    var active = !!activeSlots[i];
+    var hero = heroes[i];
+    var bg = active ? "rgba(184,134,11,0.10)" : (hero ? "rgba(184,134,11,0.05)" : "transparent");
+    var toggleBtn = (
+      <button
+        onClick={function (e) { e.stopPropagation(); onToggleActive(i); }}
+        title={active ? "Active \u2014 click to deactivate (freezes the hero)" : "Activate slot to add or change hero #" + (i + 1)}
+        style={{
+          background: active ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
+          border: active ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
+          color: active ? "#4ade80" : "#9ca3af",
+          borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700,
+          cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+        }}>
+        {active ? "\u25CF Active" : "Activate"}
+      </button>
+    );
     return (
-      <div style={{ padding: "40px 16px", textAlign: "center", color: "#4b5563" }}>
-        <div style={{ fontSize: 28, marginBottom: 8 }}>{"\uD83D\uDCCB"}</div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#6b7280", marginBottom: 4 }}>Your lineup</div>
-        <div style={{ fontSize: 11 }}>Select articles from the left. The first two become your Features (the heroes on the site & email).</div>
+      <div key={"slot" + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: (!active && !hero) ? 0.7 : 1 }}>
+        <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {hero ? (
+            <>
+              <div style={{ fontSize: 12, fontWeight: 600, color: active ? "#f5deb3" : "#cbb27a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
+              <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + (active ? hero.feedName : "frozen \u00B7 " + hero.feedName)}</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 11, color: active ? "#d4a017" : "#6b7280", fontStyle: "italic" }}>
+              {active ? ("Open \u2014 click a story to set hero #" + (i + 1)) : ("Hero #" + (i + 1) + " \u2014 deactivated")}
+            </div>
+          )}
+        </div>
+        {/* remove (only when the slot is active AND has a hero) */}
+        {active && hero && (
+          <button onClick={function (e) { e.stopPropagation(); onRemove(hero); }}
+            title="Remove this hero (slot stays open)"
+            style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>{"\u00D7"}</button>
+        )}
+        {!active && hero && (
+          <span style={{ color: "#d4a017", fontSize: 11, flexShrink: 0 }}>{"\uD83D\uDD12"}</span>
+        )}
+        {toggleBtn}
       </div>
     );
   }
 
-  // A single row renderer used for both sections. `locked` => pinned (no drag,
-  // no remove); otherwise draggable + removable.
-  function renderRow(article, i, opts) {
-    opts = opts || {};
-    var isOver = overIdx === i;
-    var locked = !!opts.locked;
+  function renderBlockRow(article, bi) {
+    var isOver = overIdx === bi;
     return (
       <div key={articleId(article)}
-        draggable={!locked}
-        onDragStart={locked ? undefined : function () { setDragIdx(i); }}
-        onDragOver={function (e) { e.preventDefault(); if (!locked) setOverIdx(i); }}
+        draggable
+        onDragStart={function () { setDragIdx(bi); }}
+        onDragOver={function (e) { e.preventDefault(); setOverIdx(bi); }}
         onDragLeave={function () { setOverIdx(null); }}
-        onDrop={function () { handleDrop(i); }}
+        onDrop={function () { handleDrop(bi); }}
         style={{
-          display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
-          cursor: locked ? "default" : "grab",
-          borderTop: (!locked && isOver) ? "2px solid #4ade80" : "2px solid transparent",
-          background: dragIdx === i ? "rgba(21,128,61,0.1)" : (opts.feature ? "rgba(184,134,11,0.06)" : "transparent"),
-          transition: "all 0.1s",
+          display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", cursor: "grab",
+          borderTop: isOver ? "2px solid #4ade80" : "2px solid transparent",
+          background: dragIdx === bi ? "rgba(21,128,61,0.1)" : "transparent", transition: "all 0.1s",
         }}>
-        <span style={{ color: opts.feature ? "#d4a017" : "#4ade80", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>
-          {opts.feature ? "\u2605" : (i + 1)}
-        </span>
-        {locked
-          ? <div style={{ fontSize: 10, color: "#b8860b", flexShrink: 0, lineHeight: 1, userSelect: "none" }}>{"\uD83D\uDD12"}</div>
-          : <div style={{ fontSize: 6, color: "#4b5563", flexShrink: 0, lineHeight: 1, userSelect: "none" }}>{"\u2630"}</div>}
+        <span style={{ color: "#4ade80", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{bi + 1}</span>
+        <div style={{ fontSize: 6, color: "#4b5563", flexShrink: 0, lineHeight: 1, userSelect: "none" }}>{"\u2630"}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: "#e5e7eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{article.title}</div>
           <div style={{ fontSize: 10, color: "#6b7280" }}>{article.feedName}</div>
         </div>
-        {!locked && (
-          <button onClick={function (e) { e.stopPropagation(); onRemove(article); }}
-            style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 }}>{"\u00D7"}</button>
-        )}
+        <button onClick={function (e) { e.stopPropagation(); onRemove(article); }}
+          style={{ background: "none", border: "none", color: "#4b5563", cursor: "pointer", fontSize: 14, padding: "0 4px", flexShrink: 0 }}>{"\u00D7"}</button>
       </div>
     );
   }
 
-  var features = selectedList.slice(0, FEATURE_COUNT);
-  var blocks = selectedList.slice(FEATURE_COUNT);
-  var canLock = selectedList.length >= 1;
+  var anyActive = activeSlots.some(Boolean);
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{selectedList.length} {selectedList.length === 1 ? "story" : "stories"}</span>
-        <button onClick={onClear} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 11, cursor: "pointer" }}>
-          {featuresLocked ? "Clear stories" : "Clear all"}
-        </button>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#4ade80" }}>{total} {total === 1 ? "story" : "stories"}</span>
+        <button onClick={onClear} style={{ background: "none", border: "none", color: "#6b7280", fontSize: 11, cursor: "pointer" }}>Clear</button>
       </div>
 
       {/* ── FEATURES (the two heroes — site + email) ── */}
@@ -281,28 +304,12 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear, 
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#d4a017", display: "flex", alignItems: "center", gap: 5 }}>
           {"\u2605"} Features
         </span>
-        <button onClick={onToggleLock} disabled={!canLock} title="Lock the two Features so Auto-pick / Top 10 / All / Clear / reorder never touch them"
-          style={{
-            background: featuresLocked ? "rgba(184,134,11,0.18)" : "rgba(255,255,255,0.04)",
-            border: featuresLocked ? "1px solid rgba(184,134,11,0.5)" : "1px solid rgba(255,255,255,0.12)",
-            color: featuresLocked ? "#d4a017" : (canLock ? "#9ca3af" : "#4b5563"),
-            borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700,
-            cursor: canLock ? "pointer" : "default", display: "flex", alignItems: "center", gap: 4,
-          }}>
-          {featuresLocked ? "\uD83D\uDD12 Locked" : "\uD83D\uDD13 Lock"}
-        </button>
+        <span style={{ fontSize: 10, fontWeight: 700, color: anyActive ? "#4ade80" : "#4b5563" }}>
+          {anyActive ? "Pick a story \u2192 hero" : "Activate to add"}
+        </span>
       </div>
       <div style={{ padding: "0 0 4px" }}>
-        {features.map(function (article, i) {
-          return renderRow(article, i, { feature: true, locked: featuresLocked });
-        })}
-        {/* Placeholder for the 2nd feature slot when only one is selected */}
-        {features.length < FEATURE_COUNT && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", opacity: 0.55 }}>
-            <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
-            <div style={{ fontSize: 11, color: "#6b7280", fontStyle: "italic" }}>Pick a 2nd feature \u2014 it becomes hero #2</div>
-          </div>
-        )}
+        {[0, 1].map(function (i) { return renderSlot(i); })}
       </div>
 
       {/* ── BLOCK STORIES (#3, 4, 5 …) ── */}
@@ -314,11 +321,9 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear, 
       <div style={{ padding: "0 0 8px" }}>
         {blocks.length === 0 ? (
           <div style={{ padding: "6px 14px 10px", fontSize: 11, color: "#4b5563", fontStyle: "italic" }}>
-            No block stories yet \u2014 select more on the left.
+            No block stories yet {"\u2014"} select more on the left.
           </div>
-        ) : blocks.map(function (article, bi) {
-          return renderRow(article, bi + FEATURE_COUNT, {});
-        })}
+        ) : blocks.map(function (article, bi) { return renderBlockRow(article, bi); })}
       </div>
     </div>
   );
@@ -330,16 +335,24 @@ function SelectionPanel({ selectedList, articles, onReorder, onRemove, onClear, 
 export default function Home() {
   var _art = useState([]), articles = _art[0], setArticles = _art[1];
   var _auto = useState([]), autoLineup = _auto[0], setAutoLineup = _auto[1];
-  var _ord = useState([]), orderedSelection = _ord[0], setOrderedSelection = _ord[1];
+  // ── Activation model ──
+  // The two hero slots start DEACTIVATED and EMPTY on load. Picks go into the
+  // block stories by default. To put a story in hero #1 or #2 you ACTIVATE
+  // that slot first (independently), then your next pick fills it. Deactivating
+  // a filled slot freezes its hero (kept, but locked from change). Each slot is
+  // controlled on its own, so you can open #1, or #2, or both.
+  var _heroes = useState([null, null]), heroes = _heroes[0], setHeroes = _heroes[1];
+  var _blocks = useState([]), blocks = _blocks[0], setBlocks = _blocks[1];
+  var _active = useState([false, false]), activeSlots = _active[0], setActiveSlots = _active[1];
+  // Canonical ordered list (heroes first, compacted, then blocks). Everything
+  // downstream — the newsletter HTML, the publish payload, the counters — reads
+  // from this, exactly as before.
+  var orderedSelection = heroes.filter(Boolean).concat(blocks);
   var _load = useState(true), loading = _load[0], setLoading = _load[1];
   var _err = useState(null), error = _err[0], setError = _err[1];
   var _fcat = useState("All"), filterCategory = _fcat[0], setFilterCategory = _fcat[1];
   var _ftime = useState("all"), filterTime = _ftime[0], setFilterTime = _ftime[1];
   var _imgOnly = useState(false), imagesOnly = _imgOnly[0], setImagesOnly = _imgOnly[1];
-  // When true, the first two lineup slots (the Features) are pinned: bulk
-  // actions and reorder skip them so the two heroes stay fixed on the site
-  // AND in the AWeber email. Unlock to change them.
-  var _flock = useState(false), featuresLocked = _flock[0], setFeaturesLocked = _flock[1];
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
   var _pub = useState(false), publishing = _pub[0], setPublishing = _pub[1];
 
@@ -487,58 +500,87 @@ export default function Home() {
   var countSiren = countBase.filter(function (a) { var ts = trendScores[articleId(a)]; return ts && ts.score >= 20; }).length;
   var countImg = countBase.filter(function (a) { return a.image && a.image.length > 10 && a.image.startsWith("http"); }).length;
 
+  // ── Activation-model helpers ──
+  function heroIndexOf(article) {
+    var aid = articleId(article);
+    for (var i = 0; i < FEATURE_COUNT; i++) { if (heroes[i] && articleId(heroes[i]) === aid) return i; }
+    return -1;
+  }
+  function isInBlocks(article) {
+    var aid = articleId(article);
+    return blocks.some(function (b) { return articleId(b) === aid; });
+  }
+  function isSelected(article) { return heroIndexOf(article) !== -1 || isInBlocks(article); }
+  function filledHeroCount() { return heroes.filter(Boolean).length; }
+
+  // Clicking an article card:
+  //  • already a hero  → empty that slot (slot stays as-is so you can re-pick)
+  //  • already a block → remove it
+  //  • brand new pick  → drop into the first ACTIVE-but-empty hero slot;
+  //    if no slot is open, it goes to the block stories.
   function toggleArticle(article) {
-    var aid = articleId(article);
-    var idx = orderedSelection.findIndex(function (a) { return articleId(a) === aid; });
-    if (idx !== -1) {
-      // Don't let a card click deselect a locked feature — unlock to change it.
-      if (featuresLocked && idx < FEATURE_COUNT) return;
-      setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; }));
-    } else {
-      // New picks always append after the features, i.e. into block stories.
-      setOrderedSelection(orderedSelection.concat([article]));
+    var hi = heroIndexOf(article);
+    if (hi !== -1) { var nh = heroes.slice(); nh[hi] = null; setHeroes(nh); return; }
+    if (isInBlocks(article)) {
+      var aid = articleId(article);
+      setBlocks(blocks.filter(function (b) { return articleId(b) !== aid; }));
+      return;
     }
+    var slot = -1;
+    for (var i = 0; i < FEATURE_COUNT; i++) { if (activeSlots[i] && !heroes[i]) { slot = i; break; } }
+    if (slot !== -1) { var nh2 = heroes.slice(); nh2[slot] = article; setHeroes(nh2); }
+    else { setBlocks(blocks.concat([article])); }
   }
-  function isSelected(article) { var aid = articleId(article); return !!orderedSelection.find(function (a) { return articleId(a) === aid; }); }
   function removeFromSelection(article) {
+    var hi = heroIndexOf(article);
+    if (hi !== -1) { var nh = heroes.slice(); nh[hi] = null; setHeroes(nh); return; }
     var aid = articleId(article);
-    var idx = orderedSelection.findIndex(function (a) { return articleId(a) === aid; });
-    if (featuresLocked && idx > -1 && idx < FEATURE_COUNT) return; // protect locked features
-    setOrderedSelection(orderedSelection.filter(function (a) { return articleId(a) !== aid; }));
+    setBlocks(blocks.filter(function (b) { return articleId(b) !== aid; }));
   }
 
-  // Helper: the locked feature articles (slots 0..FEATURE_COUNT-1) and a set of
-  // their ids, so bulk actions can preserve them and avoid re-adding duplicates.
-  function lockedFeatureList() { return featuresLocked ? orderedSelection.slice(0, FEATURE_COUNT) : []; }
+  // Activate / deactivate a hero slot. Activating opens it for the next pick.
+  // Deactivating freezes whatever hero is in it (kept, but no longer editable).
+  function toggleSlotActive(i) {
+    setActiveSlots(function (prev) {
+      var next = prev.slice();
+      next[i] = !next[i];
+      return next;
+    });
+  }
 
-  function selectTop(n) {
-    if (featuresLocked) {
-      var feats = lockedFeatureList();
-      var fids = {}; feats.forEach(function (a) { fids[articleId(a)] = true; });
-      var picks = filteredArticles.filter(function (a) { return !fids[articleId(a)]; }).slice(0, n);
-      setOrderedSelection(feats.concat(picks));
-    } else {
-      setOrderedSelection(filteredArticles.slice(0, n));
+  // Fill from a list of candidate picks: open (active+empty) hero slots first,
+  // in slot order, then everything else into blocks. Frozen/filled heroes are
+  // left untouched.
+  function fillFrom(picks) {
+    var nh = heroes.slice();
+    var used = {};
+    nh.forEach(function (h) { if (h) used[articleId(h)] = true; });
+    var queue = picks.filter(function (a) { return a && !used[articleId(a)]; });
+    for (var i = 0; i < FEATURE_COUNT; i++) {
+      if (activeSlots[i] && !nh[i]) {
+        var p = queue.shift();
+        if (p) { nh[i] = p; used[articleId(p)] = true; }
+      }
     }
+    setHeroes(nh);
+    setBlocks(queue);
   }
 
-  // Lock-aware clear: when features are locked, only the block stories are
-  // cleared; the two heroes stay. Unlock first to clear everything.
+  function selectTop(n) { fillFrom(filteredArticles.slice(0, n)); }
+
+  // Clear: drop all blocks and any hero sitting in an ACTIVE slot. Frozen
+  // heroes (filled + deactivated) are kept — deactivate to protect a hero.
   function clearSelection() {
-    if (featuresLocked) setOrderedSelection(orderedSelection.slice(0, FEATURE_COUNT));
-    else setOrderedSelection([]);
-  }
-
-  function toggleFeatureLock() {
-    if (orderedSelection.length === 0) return; // nothing to lock yet
-    setFeaturesLocked(function (v) { return !v; });
+    var nh = heroes.map(function (h, i) { return (h && !activeSlots[i]) ? h : null; });
+    setHeroes(nh);
+    setBlocks([]);
   }
 
   // Apply the auto-ranker's lineup. route.js scores every article
   // (freshness x tier x topic-heat), gates out anything stale, and returns
   // the top 10 as `autoLineup` ordered by autoRank. We match those back to
-  // the full article objects by link and load them into the selection in
-  // rank order — the user then reviews/tweaks instead of hunting.
+  // the full article objects by link and feed them through fillFrom so open
+  // hero slots get filled first, then the rest become block stories.
   function applyAutoLineup() {
     if (!autoLineup || autoLineup.length === 0) return;
     var byLink = {};
@@ -548,16 +590,8 @@ export default function Home() {
       .sort(function (a, b) { return (a.autoRank || 0) - (b.autoRank || 0); })
       .map(function (p) { return byLink[p.link]; })
       .filter(function (a) { return a && !sentLinks[a.link]; });
-    if (featuresLocked) {
-      // Keep the two locked features; fill block stories with the auto picks,
-      // skipping any pick that's already one of the features.
-      var feats = lockedFeatureList();
-      var fids = {}; feats.forEach(function (a) { fids[articleId(a)] = true; });
-      sel = sel.filter(function (a) { return !fids[articleId(a)]; });
-      setOrderedSelection(feats.concat(sel));
-    } else {
-      setOrderedSelection(sel);
-    }
+    if (sel.length === 0) return;
+    fillFrom(sel);
   }
 
   // === PUBLISH WORKFLOW ===
@@ -735,6 +769,14 @@ export default function Home() {
       var title = buildNewsletterTitle();
       var html = generateNewsletterHTML(title, orderedSelection);
       var plain = generatePlainText(title, orderedSelection);
+
+      // The heroes for THIS publish, in slot order (#1 then #2). A slot the
+      // user never filled is sent as null — the server keeps whatever hero is
+      // already live in that slot, so untouched heroes never get buried.
+      var featureLinks = heroes.map(function (h) { return h ? h.link : null; });
+      var heroIdSet = {};
+      heroes.forEach(function (h) { if (h) heroIdSet[articleId(h)] = true; });
+
       // 1. Copy newsletter HTML to clipboard (rich + plain fallback)
       try {
         var b1 = new Blob([html], { type: "text/html" });
@@ -748,7 +790,7 @@ export default function Home() {
         var res = await fetch("/api/publish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articles: orderedSelection, edition: "daily", title: title }),
+          body: JSON.stringify({ articles: orderedSelection, features: featureLinks, edition: "daily", title: title }),
         });
         if (!res.ok) throw new Error("HTTP " + res.status);
         results.website = true;
@@ -759,18 +801,18 @@ export default function Home() {
       // from another source also disappears. The next loadFeeds re-confirms
       // this via /api/published; this just makes it instant.
       if (results.website) {
-        // Snapshot what we just published (full edition: features + blocks) so
+        // Snapshot what we just published (full edition: heroes + blocks) so
         // the post-publish Download AWeber button reflects exactly what went out.
         setLastPublished({ articles: orderedSelection.slice(), title: title });
 
-        // When Features are locked, this is a "rotate the blocks, keep the
-        // heroes" publish: only the BLOCK stories get consumed (marked sent +
-        // removed from the feed). The two locked features stay available and
-        // stay in the panel, so you can immediately load new #3/#4/#5… and
-        // publish again without ever disturbing #1/#2 on the site or email.
-        // When NOT locked, every article is consumed and the panel clears
-        // (the original fresh-edition behavior).
-        var consumed = featuresLocked ? orderedSelection.slice(FEATURE_COUNT) : orderedSelection;
+        // Frozen heroes (filled + deactivated) are "keepers": they stay in the
+        // panel so you can rotate the rest and publish again without disturbing
+        // them. Everything else — active heroes and all blocks — is consumed
+        // (marked sent + pulled from the feed) and the panel resets those.
+        var keepers = heroes.map(function (h, i) { return (h && !activeSlots[i]) ? h : null; });
+        var keeperIds = {};
+        keepers.forEach(function (h) { if (h) keeperIds[articleId(h)] = true; });
+        var consumed = orderedSelection.filter(function (a) { return !keeperIds[articleId(a)]; });
 
         var pubLinks = {}, pubStories = {};
         consumed.forEach(function (a) {
@@ -789,12 +831,9 @@ export default function Home() {
           return prev.filter(function (p) { return !pubLinks[p.link]; });
         });
 
-        if (featuresLocked) {
-          // Keep the two features in place, still locked; clear only blocks.
-          setOrderedSelection(orderedSelection.slice(0, FEATURE_COUNT));
-        } else {
-          setOrderedSelection([]); // next edition starts fresh
-        }
+        // Reset: keep frozen heroes in their slots; clear active heroes + blocks.
+        setHeroes(keepers);
+        setBlocks([]);
       }
     } catch (err) {
       results.error = err.message;
@@ -1013,11 +1052,11 @@ export default function Home() {
         {!loading && (
           <div style={{ width: 280, flexShrink: 0, borderLeft: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)", minHeight: "calc(100vh - 120px)", position: "sticky", top: 0, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
             <SelectionPanel
-              selectedList={orderedSelection}
-              articles={articles}
-              featuresLocked={featuresLocked}
-              onToggleLock={toggleFeatureLock}
-              onReorder={function (newOrder) { setOrderedSelection(newOrder); }}
+              heroes={heroes}
+              blocks={blocks}
+              activeSlots={activeSlots}
+              onToggleActive={function (i) { toggleSlotActive(i); }}
+              onReorderBlocks={function (newBlocks) { setBlocks(newBlocks); }}
               onRemove={function (article) { removeFromSelection(article); }}
               onClear={function () { clearSelection(); }}
             />
@@ -1033,11 +1072,11 @@ export default function Home() {
                   {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
                   {publishing
                     ? "Publishing\u2026"
-                    : (featuresLocked
-                        ? "\uD83D\uDE80 Publish \u2014 keep 2 features, "
-                            + Math.max(0, orderedSelection.length - FEATURE_COUNT)
-                            + " new " + (orderedSelection.length - FEATURE_COUNT === 1 ? "story" : "stories")
-                        : "\uD83D\uDE80 Publish " + orderedSelection.length + " " + (orderedSelection.length === 1 ? "story" : "stories"))}
+                    : (filledHeroCount() > 0
+                        ? "\uD83D\uDE80 Publish \u2014 " + filledHeroCount()
+                            + (filledHeroCount() === 1 ? " hero + " : " heroes + ")
+                            + blocks.length + " " + (blocks.length === 1 ? "story" : "stories")
+                        : "\uD83D\uDE80 Publish " + blocks.length + " " + (blocks.length === 1 ? "story" : "stories"))}
                 </button>
                 <button onClick={function () { downloadAweberHTML(); }} style={{
                   width: "100%", marginTop: 8, padding: "10px 14px", borderRadius: 10,
@@ -1049,9 +1088,9 @@ export default function Home() {
                   {"\u2B07 Download AWeber HTML"}
                 </button>
                 <div style={{ marginTop: 8, fontSize: 10, color: "#6b7280", textAlign: "center", lineHeight: 1.5 }}>
-                  {featuresLocked
-                    ? "Heroes #1 & #2 stay put \u00B7 only the block stories update on the site & email"
-                    : <>Copies AWeber-ready HTML to clipboard<br/>+ pushes to The Mulligan Report</>}
+                  {filledHeroCount() > 0
+                    ? (filledHeroCount() === 1 ? "Your hero is" : "Your heroes are") + " pinned to the top \u00B7 stories fill in below"
+                    : "Heroes on the site stay as-is \u00B7 new stories slot in below them"}
                 </div>
               </div>
             )}
