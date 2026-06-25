@@ -47,10 +47,27 @@ function json(obj, status) {
   });
 }
 
+// Lifetime total posted, read so the tool can show it in one existing call.
+async function readTotalPosted() {
+  try {
+    var result = await list({ prefix: "config/" });
+    var blobs = (result && result.blobs) || [];
+    var match = blobs.find(function (b) { return b.pathname === "config/stats.json"; });
+    if (!match) return null;
+    var res = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
+    if (!res.ok) return null;
+    var data = await res.json();
+    return (data && typeof data.totalPosted === "number") ? data.totalPosted : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export async function GET() {
   var flag = await readFlag();
   var lastRun = await readLastRun();
   flag.lastRun = lastRun;
+  flag.totalPosted = await readTotalPosted();
   return json(flag, 200);
 }
 
