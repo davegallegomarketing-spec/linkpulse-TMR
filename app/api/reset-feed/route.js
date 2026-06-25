@@ -92,6 +92,7 @@ async function run(request) {
     dropped: arts.length - cleaned.length,
     hero1: heroes[0] ? heroes[0].title : null,
     hero2: heroes[1] ? heroes[1].title : null,
+    lifetimeCounterWillSeedAt: 808,
     firstBlocks: blocks.slice(0, 8).map(function (a, i) { return (i + 1) + ". " + a.title + "  (" + a.source + ")"; }),
   };
 
@@ -123,6 +124,21 @@ async function run(request) {
   await put("editions/" + storeKey + ".json", jsonString, {
     contentType: "application/json", access: "public", addRandomSuffix: false, allowOverwrite: true,
   });
+
+  // Seed/lock the lifetime counter at the 808 baseline. Never reduces it — if a
+  // counter already exists and is higher, we keep the higher number. This is
+  // what preserves the months of posting history through the cleanup.
+  try {
+    var sres = await list({ prefix: "config/" });
+    var sb = ((sres && sres.blobs) || []).find(function (b) { return b.pathname === "config/stats.json"; });
+    var prior = null;
+    if (sb) { var sr = await fetch(sb.downloadUrl || sb.url, { cache: "no-store" }); if (sr.ok) prior = await sr.json(); }
+    var seeded = Math.max((prior && typeof prior.totalPosted === "number") ? prior.totalPosted : 0, 808);
+    await put("config/stats.json", JSON.stringify({ totalPosted: seeded, since: (prior && prior.since) || "2026", lastUpdated: now.toISOString() }), {
+      contentType: "application/json", access: "public", addRandomSuffix: false, allowOverwrite: true,
+    });
+    preview.totalPosted = seeded;
+  } catch (e) { /* counter seed best-effort */ }
 
   preview.mode = "COMMITTED — live list cleaned";
   return json(preview, 200);
