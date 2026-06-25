@@ -1,0 +1,19 @@
+name: Auto-Feed (every 4 hours)
+
+# Fires every 4 hours, on the hour, UTC: 00, 04, 08, 12, 16, 20.
+# GitHub's scheduler is best-effort and can run a few minutes late — fine here.
+# You can also run it by hand from the Actions tab (workflow_dispatch).
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  auto-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Auto-Feed publish
+        run: |
+          curl --fail --silent --show-error -X POST \
+            "https://linkpulse-tmr.vercel.app/api/auto-publish" \
+            -H "Authorization: Bearer ${{ secrets.AUTO_FEED_SECRET }}"
