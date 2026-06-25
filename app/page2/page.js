@@ -352,6 +352,11 @@ export default function Home() {
   var _imgOnly = useState(false), imagesOnly = _imgOnly[0], setImagesOnly = _imgOnly[1];
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
   var _pub = useState(false), publishing = _pub[0], setPublishing = _pub[1];
+  // Auto-Feed switch: when ON, the scheduler publishes the best 10 block
+  // stories every 4 hours (heroes untouched). This just reflects/flips the
+  // server-side flag in /api/auto-feed.
+  var _af = useState(false), autoFeedOn = _af[0], setAutoFeedOn = _af[1];
+  var _afb = useState(false), autoFeedBusy = _afb[0], setAutoFeedBusy = _afb[1];
 
   // Snapshot of the articles + title from the most recent successful publish.
   // Kept so the post-publish "Download AWeber HTML" button still works after
@@ -423,6 +428,33 @@ export default function Home() {
 
   useEffect(function () { loadFeeds(); }, [loadFeeds]);
   useEffect(function () { var iv = setInterval(function () { loadFeeds(); }, 15 * 60 * 1000); return function () { clearInterval(iv); }; }, [loadFeeds]);
+
+  // Read the current Auto-Feed ON/OFF state once on load.
+  useEffect(function () {
+    var alive = true;
+    fetch("/api/auto-feed", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (alive && d) setAutoFeedOn(!!d.enabled); })
+      .catch(function () {});
+    return function () { alive = false; };
+  }, []);
+
+  // Flip the switch and persist it server-side.
+  function toggleAutoFeed() {
+    if (autoFeedBusy) return;
+    var next = !autoFeedOn;
+    setAutoFeedBusy(true);
+    setAutoFeedOn(next); // optimistic
+    fetch("/api/auto-feed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: next }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (d && typeof d.enabled === "boolean") setAutoFeedOn(d.enabled); })
+      .catch(function () { setAutoFeedOn(!next); }) // revert on failure
+      .finally(function () { setAutoFeedBusy(false); });
+  }
 
   var categories = ["All", ...Array.from(new Set(articles.map(function (a) { return a.feedCategory; })))];
   var trendScores = detectTrending(articles);
@@ -868,6 +900,23 @@ export default function Home() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={toggleAutoFeed} disabled={autoFeedBusy}
+              title={autoFeedOn ? "Auto-Feed is ON \u2014 the best 10 stories publish automatically every 4 hours. Click to turn off." : "Auto-Feed is OFF. Click to let the best 10 stories publish automatically every 4 hours (heroes untouched)."}
+              style={{
+                padding: "8px 14px",
+                background: autoFeedOn ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
+                color: autoFeedOn ? "#4ade80" : "#9ca3af",
+                border: autoFeedOn ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
+                borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: autoFeedBusy ? "default" : "pointer",
+                display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+              }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: autoFeedOn ? "#4ade80" : "#6b7280",
+                boxShadow: autoFeedOn ? "0 0 6px #4ade80" : "none",
+              }} />
+              {"Auto-Feed " + (autoFeedOn ? "ON" : "OFF")}
+            </button>
             <a href="https://mulligan-report-clubhouse.vercel.app/caddie-manager.html" target="_blank" rel="noopener noreferrer" style={{ padding: "8px 16px", background: "rgba(56,189,248,0.12)", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
               {"\uD83C\uDFA5 Caddies Pick"}
             </a>
