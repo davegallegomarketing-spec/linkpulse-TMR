@@ -94,6 +94,17 @@ export async function POST(request) {
     var incomingByLink = {};
     articles.forEach(function (a) { if (a.link) incomingByLink[a.link] = a; });
 
+    // Net-new = every incoming article whose link wasn't already published —
+    // heroes AND blocks. This is what the lifetime counter increments by, so a
+    // hero-only publish still counts. (newCount below tracks only new BLOCKS,
+    // which is what the response/log report; the two are intentionally separate.)
+    var netNewCount = 0;
+    var _countedNew = {};
+    articles.forEach(function (a) {
+      var l = a.link || "";
+      if (l && !existingByLink[l] && !_countedNew[l]) { _countedNew[l] = true; netNewCount++; }
+    });
+
     var allArticles;
     var newCount = 0;
 
@@ -231,7 +242,7 @@ export async function POST(request) {
       var stats = await getExistingData("config/stats.json");
       var base = (stats && typeof stats.totalPosted === "number") ? stats.totalPosted : 808;
       var updatedStats = {
-        totalPosted: base + newCount,
+        totalPosted: base + netNewCount,
         since: (stats && stats.since) || "2026",
         lastUpdated: now.toISOString(),
       };
