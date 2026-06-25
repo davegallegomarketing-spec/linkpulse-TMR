@@ -358,6 +358,12 @@ export default function Home() {
   var _af = useState(false), autoFeedOn = _af[0], setAutoFeedOn = _af[1];
   var _afb = useState(false), autoFeedBusy = _afb[0], setAutoFeedBusy = _afb[1];
   var _afr = useState(null), autoFeedLastRun = _afr[0], setAutoFeedLastRun = _afr[1];
+  var _tot = useState(null), totalPosted = _tot[0], setTotalPosted = _tot[1];
+  // "On Site Now" panel — shows what's actually live on themulliganreport.com.
+  var _liveShow = useState(false), liveShow = _liveShow[0], setLiveShow = _liveShow[1];
+  var _liveData = useState(null), liveData = _liveData[0], setLiveData = _liveData[1];
+  var _liveLoad = useState(false), liveLoading = _liveLoad[0], setLiveLoading = _liveLoad[1];
+  var _liveErr = useState(null), liveErr = _liveErr[0], setLiveErr = _liveErr[1];
 
   // Snapshot of the articles + title from the most recent successful publish.
   // Kept so the post-publish "Download AWeber HTML" button still works after
@@ -435,7 +441,7 @@ export default function Home() {
     var alive = true;
     fetch("/api/auto-feed", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (d) { if (alive && d) { setAutoFeedOn(!!d.enabled); setAutoFeedLastRun(d.lastRun || null); } })
+      .then(function (d) { if (alive && d) { setAutoFeedOn(!!d.enabled); setAutoFeedLastRun(d.lastRun || null); if (typeof d.totalPosted === "number") setTotalPosted(d.totalPosted); } })
       .catch(function () {});
     return function () { alive = false; };
   }, []);
@@ -455,6 +461,22 @@ export default function Home() {
       .then(function (d) { if (d && typeof d.enabled === "boolean") setAutoFeedOn(d.enabled); })
       .catch(function () { setAutoFeedOn(!next); }) // revert on failure
       .finally(function () { setAutoFeedBusy(false); });
+  }
+
+  // Open the "On Site Now" panel and load exactly what's published right now,
+  // straight from the same data the live site reads (/api/published).
+  function openLive() {
+    setLiveShow(true);
+    setLiveLoading(true);
+    setLiveErr(null);
+    fetch("/api/published", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && Array.isArray(d.articles)) setLiveData(d);
+        else { setLiveData(null); setLiveErr(d && d.error ? d.error : "No published edition yet"); }
+      })
+      .catch(function (e) { setLiveErr(e.message); })
+      .finally(function () { setLiveLoading(false); });
   }
 
   var categories = ["All", ...Array.from(new Set(articles.map(function (a) { return a.feedCategory; })))];
@@ -925,6 +947,11 @@ export default function Home() {
                       + new Date(autoFeedLastRun.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))
                   : "No auto-runs yet"}
               </div>
+              {typeof totalPosted === "number" && (
+                <div style={{ fontSize: 10, color: "#b8860b", paddingLeft: 2, whiteSpace: "nowrap", fontWeight: 600 }}>
+                  {"\uD83D\uDCCA " + totalPosted.toLocaleString() + " curated articles since 2026"}
+                </div>
+              )}
             </div>
             <a href="https://mulligan-report-clubhouse.vercel.app/caddie-manager.html" target="_blank" rel="noopener noreferrer" style={{ padding: "8px 16px", background: "rgba(56,189,248,0.12)", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
               {"\uD83C\uDFA5 Caddies Pick"}
@@ -932,6 +959,10 @@ export default function Home() {
             <a href="/tickers" target="_blank" rel="noopener noreferrer" style={{ padding: "8px 16px", background: "rgba(184,134,11,0.12)", color: "#b8860b", border: "1px solid rgba(184,134,11,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
               {"\uD83D\uDCC8 Tickers"}
             </a>
+            <button onClick={openLive} title="See exactly what's live on themulliganreport.com right now"
+              style={{ padding: "8px 16px", background: "rgba(168,85,247,0.12)", color: "#c084fc", border: "1px solid rgba(168,85,247,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+              {"\uD83D\uDC41 On Site Now"}
+            </button>
             <button onClick={loadFeeds} disabled={loading} style={{ padding: "8px 16px", background: loading ? "#374151" : "rgba(21,128,61,0.15)", color: loading ? "#6b7280" : "#4ade80", border: "1px solid rgba(21,128,61,0.25)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: loading ? "default" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
               {loading && <div style={{ width: 14, height: 14, border: "2px solid #4ade80", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
               {loading ? "Fetching\u2026" : "\u21BB Refresh"}
@@ -1210,6 +1241,63 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {liveShow && (
+        <div onClick={function () { setLiveShow(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+          <div onClick={function (e) { e.stopPropagation(); }}
+            style={{ background: "#0b1410", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14, width: "100%", maxWidth: 620, maxHeight: "85vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: 8 }}>{"\uD83D\uDC41"} On Site Now</div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Exactly what's live on themulliganreport.com</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={openLive} title="Reload" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", color: "#9ca3af", borderRadius: 7, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{"\u21BB"}</button>
+                <button onClick={function () { setLiveShow(false); }} style={{ background: "none", border: "none", color: "#9ca3af", fontSize: 20, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}>{"\u00D7"}</button>
+              </div>
+            </div>
+            <div style={{ overflowY: "auto", padding: "8px 0 16px" }}>
+              {liveLoading && <div style={{ padding: 30, textAlign: "center", color: "#6b7280", fontSize: 13 }}>Loading what's live\u2026</div>}
+              {!liveLoading && liveErr && <div style={{ padding: 30, textAlign: "center", color: "#f87171", fontSize: 13 }}>{liveErr}</div>}
+              {!liveLoading && !liveErr && liveData && (function () {
+                var arts = liveData.articles || [];
+                var heroes = arts.slice(0, FEATURE_COUNT);
+                var blocks = arts.slice(FEATURE_COUNT);
+                return (
+                  <div>
+                    <div style={{ padding: "10px 20px 6px", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#d4a017" }}>{"\u2605"} Features (heroes)</div>
+                    {heroes.length === 0 && <div style={{ padding: "4px 20px 8px", fontSize: 12, color: "#6b7280" }}>None.</div>}
+                    {heroes.map(function (a, i) {
+                      return (
+                        <div key={"lh" + i} style={{ display: "flex", gap: 10, padding: "8px 20px", alignItems: "baseline" }}>
+                          <span style={{ color: "#d4a017", fontSize: 12, flexShrink: 0 }}>{"\u2605"}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: "#f5deb3" }}>{a.title}</div>
+                            <div style={{ fontSize: 11, color: "#6b7280" }}>{(a.source || "") + (a.pubDate ? " \u00B7 " + formatDate(a.pubDate) : "")}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ padding: "12px 20px 6px", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6b7280", borderTop: "1px solid rgba(255,255,255,0.06)", marginTop: 6 }}>Block stories ({blocks.length})</div>
+                    {blocks.map(function (a, i) {
+                      return (
+                        <div key={"lb" + i} style={{ display: "flex", gap: 10, padding: "7px 20px", alignItems: "baseline" }}>
+                          <span style={{ color: "#4ade80", fontSize: 11, fontWeight: 700, width: 20, textAlign: "right", flexShrink: 0 }}>{i + 1}</span>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "#e5e7eb" }}>{a.title}</div>
+                            <div style={{ fontSize: 10, color: "#6b7280" }}>{(a.source || "") + (a.pubDate ? " \u00B7 " + formatDate(a.pubDate) : "")}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
