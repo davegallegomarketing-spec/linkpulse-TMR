@@ -357,6 +357,7 @@ export default function Home() {
   // server-side flag in /api/auto-feed.
   var _af = useState(false), autoFeedOn = _af[0], setAutoFeedOn = _af[1];
   var _afb = useState(false), autoFeedBusy = _afb[0], setAutoFeedBusy = _afb[1];
+  var _afr = useState(null), autoFeedLastRun = _afr[0], setAutoFeedLastRun = _afr[1];
 
   // Snapshot of the articles + title from the most recent successful publish.
   // Kept so the post-publish "Download AWeber HTML" button still works after
@@ -434,7 +435,7 @@ export default function Home() {
     var alive = true;
     fetch("/api/auto-feed", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (d) { if (alive && d) setAutoFeedOn(!!d.enabled); })
+      .then(function (d) { if (alive && d) { setAutoFeedOn(!!d.enabled); setAutoFeedLastRun(d.lastRun || null); } })
       .catch(function () {});
     return function () { alive = false; };
   }, []);
@@ -899,24 +900,32 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button onClick={toggleAutoFeed} disabled={autoFeedBusy}
-              title={autoFeedOn ? "Auto-Feed is ON \u2014 the best 10 stories publish automatically every 4 hours. Click to turn off." : "Auto-Feed is OFF. Click to let the best 10 stories publish automatically every 4 hours (heroes untouched)."}
-              style={{
-                padding: "8px 14px",
-                background: autoFeedOn ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
-                color: autoFeedOn ? "#4ade80" : "#9ca3af",
-                border: autoFeedOn ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
-                borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: autoFeedBusy ? "default" : "pointer",
-                display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
-              }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: "50%",
-                background: autoFeedOn ? "#4ade80" : "#6b7280",
-                boxShadow: autoFeedOn ? "0 0 6px #4ade80" : "none",
-              }} />
-              {"Auto-Feed " + (autoFeedOn ? "ON" : "OFF")}
-            </button>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 3 }}>
+              <button onClick={toggleAutoFeed} disabled={autoFeedBusy}
+                title={autoFeedOn ? "Auto-Feed is ON \u2014 the best 10 stories publish automatically every 4 hours. Click to turn off." : "Auto-Feed is OFF. Click to let the best 10 stories publish automatically every 4 hours (heroes untouched)."}
+                style={{
+                  padding: "8px 14px",
+                  background: autoFeedOn ? "rgba(74,222,128,0.16)" : "rgba(255,255,255,0.04)",
+                  color: autoFeedOn ? "#4ade80" : "#9ca3af",
+                  border: autoFeedOn ? "1px solid rgba(74,222,128,0.5)" : "1px solid rgba(255,255,255,0.14)",
+                  borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: autoFeedBusy ? "default" : "pointer",
+                  display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+                }}>
+                <span style={{
+                  width: 8, height: 8, borderRadius: "50%",
+                  background: autoFeedOn ? "#4ade80" : "#6b7280",
+                  boxShadow: autoFeedOn ? "0 0 6px #4ade80" : "none",
+                }} />
+                {"Auto-Feed " + (autoFeedOn ? "ON" : "OFF")}
+              </button>
+              <div style={{ fontSize: 10, color: autoFeedLastRun ? "#6b7280" : "#4b5563", paddingLeft: 2, whiteSpace: "nowrap" }}>
+                {autoFeedLastRun
+                  ? ("\u2713 Last Auto-Feed: " + autoFeedLastRun.count + " " + (autoFeedLastRun.count === 1 ? "story" : "stories") + " \u00B7 "
+                      + new Date(autoFeedLastRun.at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }))
+                  : "No auto-runs yet"}
+              </div>
+            </div>
             <a href="https://mulligan-report-clubhouse.vercel.app/caddie-manager.html" target="_blank" rel="noopener noreferrer" style={{ padding: "8px 16px", background: "rgba(56,189,248,0.12)", color: "#38bdf8", border: "1px solid rgba(56,189,248,0.3)", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}>
               {"\uD83C\uDFA5 Caddies Pick"}
             </a>
