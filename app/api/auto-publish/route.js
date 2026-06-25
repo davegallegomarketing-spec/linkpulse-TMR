@@ -9,7 +9,7 @@
 //      as they are on the site (features: [null, null])
 import { list, put } from "@vercel/blob";
 
-var AUTO_COUNT = 10;       // block stories per run
+var AUTO_COUNT = 6;        // block stories per run (6 × 6 runs/day = 36/day)
 var PER_CATEGORY_CAP = 3;  // diversity cap — matches the manual Auto-pick
 
 async function readFlagEnabled() {
@@ -85,14 +85,16 @@ async function run(request) {
       return true;
     });
 
-    // 6. Strongest first (reuse the ranker's score), then per-category cap.
+    // 6. Most recent FIRST (so Auto-Feed always reflects what just broke, not
+    //    stories that have been sitting a few hours). Quality score only breaks
+    //    ties between articles published at the same time. Then per-category cap.
     eligible.sort(function (a, b) {
-      var sa = a.rank ? a.rank.score : 0;
-      var sb = b.rank ? b.rank.score : 0;
-      if (sb !== sa) return sb - sa;
       var at = a.pubDate ? new Date(a.pubDate).getTime() : 0;
       var bt = b.pubDate ? new Date(b.pubDate).getTime() : 0;
-      return bt - at;
+      if (bt !== at) return bt - at;          // newest first
+      var sa = a.rank ? a.rank.score : 0;
+      var sb = b.rank ? b.rank.score : 0;
+      return sb - sa;                         // tie-break by quality
     });
     var perCat = {};
     var picks = [];
