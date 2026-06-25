@@ -223,6 +223,29 @@ export async function POST(request) {
       allowOverwrite: true,
     });
 
+    // ═══ LIFETIME COUNTER (best-effort, never blocks the publish) ═══
+    // Tracks every article ever posted, separate from the live list, so the
+    // cap/cleanup trimming old links never reduces the running total. Seeds at
+    // 808 (the verified baseline) if the file doesn't exist yet.
+    try {
+      var stats = await getExistingData("config/stats.json");
+      var base = (stats && typeof stats.totalPosted === "number") ? stats.totalPosted : 808;
+      var updatedStats = {
+        totalPosted: base + newCount,
+        since: (stats && stats.since) || "2026",
+        lastUpdated: now.toISOString(),
+      };
+      await put("config/stats.json", JSON.stringify(updatedStats), {
+        contentType: "application/json",
+        access: "public",
+        addRandomSuffix: false,
+        allowOverwrite: true,
+      });
+      console.log("[publish] Lifetime total:", updatedStats.totalPosted);
+    } catch (statsErr) {
+      console.error("[publish] Counter update failed (continuing):", statsErr && statsErr.message);
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
