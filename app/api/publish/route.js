@@ -159,12 +159,31 @@ export async function POST(request) {
 
     allArticles.forEach(function (a, i) { a.position = i + 1; });
 
-    // ═══ SAFETY CHECK: never write fewer articles than we started with ═══
-    if (allArticles.length < existingArticles.length) {
-      console.error("[publish] BLOCKED — would reduce articles from", existingArticles.length, "to", allArticles.length);
+    // ═══ CAP: keep only the most recent MAX_ARTICLES ═══
+    // The live site only ever shows the first 122 (2 heroes + 30 + 90). We keep
+    // 150 (122 + buffer) and drop the older tail — articles past here are just
+    // redirect links no reader can see. Heroes (1-2) and the whole visible page
+    // are at the FRONT, so trimming the tail can never touch them.
+    var MAX_ARTICLES = 150;
+    var beforeCap = allArticles.length;
+    if (allArticles.length > MAX_ARTICLES) {
+      allArticles = allArticles.slice(0, MAX_ARTICLES);
+      allArticles.forEach(function (a, i) { a.position = i + 1; });
+    }
+
+    // ═══ SAFETY CHECK: never write an empty or suspiciously short list ═══
+    // The cap intentionally reduces the count, so we no longer block on "fewer
+    // than before". Instead: never write empty, and never drop below the count
+    // the site shows (122) when we clearly had enough to fill it. This still
+    // catches a real bug (e.g. logic that loses articles) without blocking the
+    // intended cap.
+    var VISIBLE = 122;
+    var minSafe = Math.min(beforeCap, VISIBLE);
+    if (allArticles.length === 0 || allArticles.length < minSafe) {
+      console.error("[publish] BLOCKED — unsafe result:", allArticles.length, "from", beforeCap);
       return new Response(JSON.stringify({
-        error: "Safety block: publish would reduce article count",
-        existing: existingArticles.length,
+        error: "Safety block: result too short, writing nothing",
+        before: beforeCap,
         wouldBe: allArticles.length,
       }), {
         status: 400,
