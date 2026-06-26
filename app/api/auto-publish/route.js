@@ -26,12 +26,15 @@ async function readFlagEnabled() {
 }
 
 function authorized(request) {
-  var secret = process.env.AUTO_FEED_SECRET;
-  if (!secret) return false; // must be configured in env, or nothing is allowed
+  // Accept either secret: AUTO_FEED_SECRET (manual tests / GitHub) or
+  // CRON_SECRET (Vercel Cron sends "Authorization: Bearer <CRON_SECRET>"
+  // automatically when that env var is set).
+  var secrets = [process.env.AUTO_FEED_SECRET, process.env.CRON_SECRET].filter(Boolean);
+  if (secrets.length === 0) return false; // nothing configured → allow nothing
   var auth = request.headers.get("authorization") || "";
   var bearer = auth.replace(/^Bearer\s+/i, "");
   var key = new URL(request.url).searchParams.get("key") || "";
-  return bearer === secret || key === secret;
+  return secrets.indexOf(bearer) !== -1 || secrets.indexOf(key) !== -1;
 }
 
 function json(obj, status) {
