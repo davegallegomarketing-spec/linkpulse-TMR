@@ -11,6 +11,10 @@ import { list, put } from "@vercel/blob";
 
 var AUTO_COUNT = 6;        // block stories per run (6 × 6 runs/day = 36/day)
 var PER_CATEGORY_CAP = 3;  // diversity cap — matches the manual Auto-pick
+var MAX_AGE_HOURS = 24;    // only auto-post articles newer than this. On slow
+                           // days (weekends) the feed has little new material, so
+                           // this posts FEWER (even 0) rather than dredging up old
+                           // news — the system waits and accumulates for next run.
 
 async function readFlagEnabled() {
   try {
@@ -52,7 +56,13 @@ async function run(request) {
   var enabled = await readFlagEnabled();
   if (!enabled) return json({ skipped: true, reason: "Auto-Feed is OFF" }, 200);
 
-  var origin = new URL(request.url).origin;
+  // Always self-call the STABLE PUBLIC domain — never the incoming host.
+  // Vercel Cron arrives on a protected deployment URL (linkpulse-xxxx.vercel.app);
+  // self-fetching that URL hits deployment authentication and fails (the GET 500s).
+  // The production domain is public, so internal /api/feeds, /api/published and
+  // /api/publish calls succeed no matter who triggered the run. Override with the
+  // SELF_BASE_URL env var if the domain ever changes.
+  var origin = process.env.SELF_BASE_URL || "https://linkpulse-tmr.vercel.app";
 
   try {
     // 3. Fresh, scored articles from the existing ranker pipeline.
@@ -78,13 +88,21 @@ async function run(request) {
       }
     } catch (e) {}
 
-    // 5. Eligible = fresh/recent, not a duplicate, not already published.
+    // 5. Eligible = genuinely FRESH, not a duplicate, not already published.
+    //    The age cutoff is the weekend guard: if the newest available stories are
+    //    older than MAX_AGE_HOURS, they're skipped, so a slow day posts fewer
+    //    (or none) instead of old news.
+    var nowMs = Date.now();
     var eligible = articles.filter(function (a) {
       if (!a || !a.link) return false;
       if (a.freshness !== "fresh" && a.freshness !== "recent") return false;
       if (a.duplicateOf) return false;
       if (publishedLinks[a.link]) return false;
       if (a.storyKey && publishedStories[a.storyKey]) return false;
+      // Freshness cutoff by real publish time.
+      var t = a.pubDate ? new Date(a.pubDate).getTime() : NaN;
+      if (isNaN(t)) return false;                       // no date → can't confirm fresh
+      if ((nowMs - t) / 3600000 > MAX_AGE_HOURS) return false; // too old → wait
       return true;
     });
 
