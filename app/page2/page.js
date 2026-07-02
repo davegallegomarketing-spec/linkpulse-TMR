@@ -463,6 +463,8 @@ export default function Home() {
   // server-side flag in /api/auto-feed.
   var _af = useState(false), autoFeedOn = _af[0], setAutoFeedOn = _af[1];
   var _afb = useState(false), autoFeedBusy = _afb[0], setAutoFeedBusy = _afb[1];
+  var _cOff = useState(false), confirmOff = _cOff[0], setConfirmOff = _cOff[1];
+  var _cTxt = useState(""), confirmText = _cTxt[0], setConfirmText = _cTxt[1];
   var _afr = useState(null), autoFeedLastRun = _afr[0], setAutoFeedLastRun = _afr[1];
   var _tot = useState(null), totalPosted = _tot[0], setTotalPosted = _tot[1];
   // "On Site Now" panel — shows what's actually live on themulliganreport.com.
@@ -553,9 +555,9 @@ export default function Home() {
   }, []);
 
   // Flip the switch and persist it server-side.
-  function toggleAutoFeed() {
+  // Persist the enabled flag to the server.
+  function applyAutoFeed(next) {
     if (autoFeedBusy) return;
-    var next = !autoFeedOn;
     setAutoFeedBusy(true);
     setAutoFeedOn(next); // optimistic
     fetch("/api/auto-feed", {
@@ -567,6 +569,21 @@ export default function Home() {
       .then(function (d) { if (d && typeof d.enabled === "boolean") setAutoFeedOn(d.enabled); })
       .catch(function () { setAutoFeedOn(!next); }) // revert on failure
       .finally(function () { setAutoFeedBusy(false); });
+  }
+
+  // Turning ON is one click. Turning OFF opens a confirm box (type "Deactivate")
+  // so the whole site's auto-updating can't be stopped by an accidental click.
+  function toggleAutoFeed() {
+    if (autoFeedBusy) return;
+    if (autoFeedOn) { setConfirmText(""); setConfirmOff(true); }
+    else { applyAutoFeed(true); }
+  }
+
+  function confirmDeactivate() {
+    if ((confirmText || "").trim().toLowerCase() !== "deactivate") return;
+    setConfirmOff(false);
+    setConfirmText("");
+    applyAutoFeed(false);
   }
 
   // Open the "On Site Now" panel and load exactly what's published right now,
@@ -1047,6 +1064,29 @@ export default function Home() {
                 }} />
                 {"Auto-Feed " + (autoFeedOn ? "ON" : "OFF")}
               </button>
+              {confirmOff && (
+                <div style={{ marginTop: 4, padding: "8px 10px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.35)", borderRadius: 8, width: 210 }}>
+                  <div style={{ fontSize: 10, color: "#f87171", fontWeight: 700, marginBottom: 6, lineHeight: 1.3 }}>
+                    {"Type \u201CDeactivate\u201D to turn Auto-Feed off"}
+                  </div>
+                  <input value={confirmText} autoFocus
+                    onChange={function (e) { setConfirmText(e.target.value); }}
+                    onKeyDown={function (e) { if (e.key === "Enter") confirmDeactivate(); if (e.key === "Escape") { setConfirmOff(false); setConfirmText(""); } }}
+                    placeholder="Deactivate"
+                    style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#e5e7eb", fontSize: 11, padding: "5px 8px", boxSizing: "border-box" }} />
+                  <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                    <button onClick={confirmDeactivate}
+                      disabled={confirmText.trim().toLowerCase() !== "deactivate"}
+                      style={{ flex: 1, background: confirmText.trim().toLowerCase() === "deactivate" ? "#dc2626" : "#374151", border: "none", color: confirmText.trim().toLowerCase() === "deactivate" ? "#fff" : "#6b7280", borderRadius: 6, padding: "6px 10px", fontSize: 10, fontWeight: 700, cursor: confirmText.trim().toLowerCase() === "deactivate" ? "pointer" : "default" }}>
+                      Turn Off
+                    </button>
+                    <button onClick={function () { setConfirmOff(false); setConfirmText(""); }}
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", color: "#9ca3af", borderRadius: 6, padding: "6px 10px", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={{ fontSize: 10, color: autoFeedLastRun ? "#6b7280" : "#4b5563", paddingLeft: 2, whiteSpace: "nowrap" }}>
                 {autoFeedLastRun
                   ? ("\u2713 Last Auto-Feed: " + autoFeedLastRun.count + " " + (autoFeedLastRun.count === 1 ? "story" : "stories") + " \u00B7 "
