@@ -14,7 +14,13 @@ async function getExistingData(filename) {
     });
     if (!match) return null;
     var url = match.downloadUrl || match.url;
-    var res = await fetch(url, { cache: "no-store" });
+    // Cache-bust: Vercel Blob serves overwritten files stale for up to ~60s from
+    // its CDN, and `cache:"no-store"` does NOT bypass that CDN layer. A unique
+    // query param forces a fresh copy from origin — critical here, because we
+    // read this to build the next publish; a stale read would write OLD heroes
+    // back and cause the "hero reverts a few minutes later" bug.
+    var freshUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "_cb=" + Date.now();
+    var res = await fetch(freshUrl, { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
