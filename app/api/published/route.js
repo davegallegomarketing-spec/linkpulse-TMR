@@ -8,7 +8,13 @@ async function fetchBlob(filename) {
     var blobs = result.blobs || [];
     var match = blobs.find(function (b) { return b.pathname === filename; });
     if (!match) return null;
-    var res = await fetch(match.downloadUrl || match.url, { cache: "no-store" });
+    var url = match.downloadUrl || match.url;
+    // Cache-bust the blob read. Vercel Blob keeps overwritten files in its CDN
+    // for up to ~60s (longer with browser cache), and `cache:"no-store"` does not
+    // bypass that. A unique query param forces a fresh copy — without it the site
+    // can show a just-replaced hero, then flip back to the old one (the revert bug).
+    var freshUrl = url + (url.indexOf("?") === -1 ? "?" : "&") + "_cb=" + Date.now();
+    var res = await fetch(freshUrl, { cache: "no-store" });
     if (!res.ok) return null;
     return await res.json();
   } catch (e) {
