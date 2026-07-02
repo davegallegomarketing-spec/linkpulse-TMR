@@ -198,9 +198,55 @@ function ArticleCard({ article, selected, onToggle, isSent, trendScore, orderNum
   );
 }
 
-function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorderBlocks, onRemove, onClear }) {
+function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorderBlocks, onRemove, onClear, onSetHero }) {
   var _drag = useState(null), dragIdx = _drag[0], setDragIdx = _drag[1];
   var _over = useState(null), overIdx = _over[0], setOverIdx = _over[1];
+
+  // ── ADD + (paste a URL into a hero slot) ──
+  var _addSlot = useState(null), addSlot = _addSlot[0], setAddSlot = _addSlot[1];   // which slot's box is open
+  var _addUrl = useState(""), addUrl = _addUrl[0], setAddUrl = _addUrl[1];
+  var _addBusy = useState(false), addBusy = _addBusy[0], setAddBusy = _addBusy[1];
+  var _addRes = useState(null), addRes = _addRes[0], setAddRes = _addRes[1];        // fetched + editable {title,image,source,...}
+  var _addErr = useState(null), addErr = _addErr[0], setAddErr = _addErr[1];
+
+  function openAdd(i) {
+    setAddSlot(i); setAddUrl(""); setAddRes(null); setAddErr(null); setAddBusy(false);
+  }
+  function closeAdd() {
+    setAddSlot(null); setAddUrl(""); setAddRes(null); setAddErr(null); setAddBusy(false);
+  }
+  function fetchUrl() {
+    var u = (addUrl || "").trim();
+    if (!u) return;
+    setAddBusy(true); setAddErr(null); setAddRes(null);
+    fetch("/api/fetch-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: u }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.error) { setAddErr((d && d.error) || "Could not read that URL"); return; }
+        setAddRes({ title: d.title || "", image: d.image || "", source: d.source || "", description: d.description || "", pubDate: d.pubDate || "", link: d.link || u });
+      })
+      .catch(function (e) { setAddErr(e.message); })
+      .finally(function () { setAddBusy(false); });
+  }
+  function acceptAdd(i) {
+    if (!addRes || !addRes.title) { setAddErr("A headline is required"); return; }
+    // Shape it like a feed article so publish/render treat it the same.
+    var article = {
+      title: addRes.title,
+      link: addRes.link,
+      image: addRes.image || "",
+      feedName: addRes.source || "Added",
+      feedCategory: "Featured",
+      pubDate: addRes.pubDate || new Date().toISOString(),
+      description: addRes.description || "",
+    };
+    onSetHero(i, article);
+    closeAdd();
+  }
 
   var filledHeroes = heroes.filter(Boolean).length;
   var total = filledHeroes + blocks.length;
@@ -236,27 +282,87 @@ function SelectionPanel({ heroes, blocks, activeSlots, onToggleActive, onReorder
       </button>
     );
     return (
-      <div key={"slot" + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: active ? 1 : 0.7 }}>
-        <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {(active && hero) ? (
-            <>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#f5deb3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
-              <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + hero.feedName}</div>
-            </>
-          ) : (
-            <div style={{ fontSize: 11, color: active ? "#d4a017" : "#6b7280", fontStyle: "italic" }}>
-              {active ? ("Open \u2014 click a story to set hero #" + (i + 1)) : ("Hero #" + (i + 1) + " \u2014 deactivated")}
-            </div>
+      <div key={"slot" + i}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: bg, opacity: active ? 1 : 0.7 }}>
+          <span style={{ color: "#d4a017", fontSize: 12, fontWeight: 700, width: 20, textAlign: "center", flexShrink: 0 }}>{"\u2605"}</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {(active && hero) ? (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#f5deb3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{hero.title}</div>
+                <div style={{ fontSize: 10, color: "#6b7280" }}>{"Hero #" + (i + 1) + " \u00B7 " + hero.feedName}</div>
+              </>
+            ) : (
+              <div style={{ fontSize: 11, color: active ? "#d4a017" : "#6b7280", fontStyle: "italic" }}>
+                {active ? ("Open \u2014 click a story or ADD+ to set hero #" + (i + 1)) : ("Hero #" + (i + 1) + " \u2014 deactivated")}
+              </div>
+            )}
+          </div>
+          {/* remove (only when the slot is active AND has a hero) */}
+          {active && hero && (
+            <button onClick={function (e) { e.stopPropagation(); onRemove(hero); }}
+              title="Remove this hero (slot stays open)"
+              style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>{"\u00D7"}</button>
           )}
+          {/* ADD + — only when the slot is active */}
+          {active && (
+            <button onClick={function (e) { e.stopPropagation(); addSlot === i ? closeAdd() : openAdd(i); }}
+              title={"Add a hero from any article URL"}
+              style={{
+                background: addSlot === i ? "rgba(96,165,250,0.2)" : "rgba(96,165,250,0.1)",
+                border: "1px solid rgba(96,165,250,0.4)", color: "#60a5fa",
+                borderRadius: 6, padding: "3px 9px", fontSize: 10, fontWeight: 700,
+                cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap",
+              }}>
+              {addSlot === i ? "Close" : "ADD +"}
+            </button>
+          )}
+          {toggleBtn}
         </div>
-        {/* remove (only when the slot is active AND has a hero) */}
-        {active && hero && (
-          <button onClick={function (e) { e.stopPropagation(); onRemove(hero); }}
-            title="Remove this hero (slot stays open)"
-            style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "0 2px", flexShrink: 0 }}>{"\u00D7"}</button>
+        {/* URL box for this slot */}
+        {active && addSlot === i && (
+          <div style={{ padding: "10px 14px 12px", background: "rgba(96,165,250,0.06)", borderTop: "1px solid rgba(96,165,250,0.15)" }}>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input
+                value={addUrl}
+                onChange={function (e) { setAddUrl(e.target.value); }}
+                onKeyDown={function (e) { if (e.key === "Enter") fetchUrl(); }}
+                placeholder={"Paste an article URL\u2026"}
+                style={{ flex: 1, minWidth: 0, background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#e5e7eb", fontSize: 11, padding: "6px 8px" }}
+              />
+              <button onClick={fetchUrl} disabled={addBusy || !addUrl.trim()}
+                style={{ background: addBusy ? "#374151" : "rgba(96,165,250,0.2)", border: "1px solid rgba(96,165,250,0.4)", color: "#60a5fa", borderRadius: 6, padding: "6px 10px", fontSize: 10, fontWeight: 700, cursor: addBusy ? "default" : "pointer", flexShrink: 0 }}>
+                {addBusy ? "\u2026" : "Fetch"}
+              </button>
+            </div>
+            {addErr && <div style={{ fontSize: 10, color: "#f87171", marginTop: 6 }}>{addErr}</div>}
+            {addRes && (
+              <div style={{ marginTop: 8 }}>
+                {addRes.image
+                  ? <img src={addRes.image} alt="" style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)" }} onError={function (e) { e.target.style.display = "none"; }} />
+                  : <div style={{ fontSize: 10, color: "#d4a017", padding: "4px 0" }}>No image found \u2014 paste an image URL below.</div>}
+                <div style={{ fontSize: 9, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "8px 0 2px" }}>Headline</div>
+                <textarea value={addRes.title} onChange={function (e) { setAddRes(Object.assign({}, addRes, { title: e.target.value })); }}
+                  rows={2} style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#f5deb3", fontSize: 11, padding: "6px 8px", resize: "vertical", fontFamily: "inherit" }} />
+                <div style={{ fontSize: 9, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "8px 0 2px" }}>Image URL</div>
+                <input value={addRes.image} onChange={function (e) { setAddRes(Object.assign({}, addRes, { image: e.target.value })); }}
+                  placeholder={"https://\u2026 (optional)"} style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#e5e7eb", fontSize: 10, padding: "6px 8px" }} />
+                <div style={{ fontSize: 9, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em", margin: "8px 0 2px" }}>Source</div>
+                <input value={addRes.source} onChange={function (e) { setAddRes(Object.assign({}, addRes, { source: e.target.value })); }}
+                  style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.15)", borderRadius: 6, color: "#e5e7eb", fontSize: 10, padding: "6px 8px" }} />
+                <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                  <button onClick={function () { acceptAdd(i); }}
+                    style={{ flex: 1, background: "linear-gradient(135deg,#15803d,#059669)", border: "none", color: "#fff", borderRadius: 6, padding: "7px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
+                    {"Accept \u2192 Hero #" + (i + 1)}
+                  </button>
+                  <button onClick={closeAdd}
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.15)", color: "#9ca3af", borderRadius: 6, padding: "7px 12px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         )}
-        {toggleBtn}
       </div>
     );
   }
@@ -1152,6 +1258,7 @@ export default function Home() {
               blocks={blocks}
               activeSlots={activeSlots}
               onToggleActive={function (i) { toggleSlotActive(i); }}
+              onSetHero={function (i, article) { var nh = heroes.slice(); nh[i] = article; setHeroes(nh); }}
               onReorderBlocks={function (newBlocks) { setBlocks(newBlocks); }}
               onRemove={function (article) { removeFromSelection(article); }}
               onClear={function () { clearSelection(); }}
