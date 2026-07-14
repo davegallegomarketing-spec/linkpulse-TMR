@@ -458,6 +458,10 @@ export default function Home() {
   var _imgOnly = useState(false), imagesOnly = _imgOnly[0], setImagesOnly = _imgOnly[1];
   var _meta = useState(null), fetchMeta = _meta[0], setFetchMeta = _meta[1];
   var _pub = useState(false), publishing = _pub[0], setPublishing = _pub[1];
+  // Cooldown after a successful publish. Storage takes up to ~60s to propagate an
+  // overwrite; publishing again inside that window is what made heroes revert.
+  // The button simply won't arm until the window has passed.
+  var _cd = useState(0), cooldown = _cd[0], setCooldown = _cd[1];
   // Auto-Feed switch: when ON, the scheduler publishes the best 10 block
   // stories every 4 hours (heroes untouched). This just reflects/flips the
   // server-side flag in /api/auto-feed.
@@ -467,6 +471,10 @@ export default function Home() {
   var _cTxt = useState(""), confirmText = _cTxt[0], setConfirmText = _cTxt[1];
   var _afr = useState(null), autoFeedLastRun = _afr[0], setAutoFeedLastRun = _afr[1];
   var _tot = useState(null), totalPosted = _tot[0], setTotalPosted = _tot[1];
+  // The version of the live site this session is building on (its publishedAt).
+  // Sent with every publish so the server can refuse to write from a stale read
+  // or over someone else's newer publish — this is what stops heroes reverting.
+  var _sv = useState(null), siteVersion = _sv[0], setSiteVersion = _sv[1];
   // "On Site Now" panel — shows what's actually live on themulliganreport.com.
   var _liveShow = useState(false), liveShow = _liveShow[0], setLiveShow = _liveShow[1];
   var _liveData = useState(null), liveData = _liveData[0], setLiveData = _liveData[1];
@@ -554,6 +562,24 @@ export default function Home() {
     return function () { alive = false; };
   }, []);
 
+  // Tick the publish cooldown down to zero.
+  useEffect(function () {
+    if (cooldown <= 0) return;
+    var iv = setInterval(function () { setCooldown(function (c) { return c > 0 ? c - 1 : 0; }); }, 1000);
+    return function () { clearInterval(iv); };
+  }, [cooldown > 0]);
+
+  // Learn which version of the live site we're building on, so the server can
+  // reject a publish made from stale data (the cause of heroes reverting).
+  useEffect(function () {
+    var alive = true;
+    fetch("/api/published", { cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) { if (alive && d && d.publishedAt) setSiteVersion(d.publishedAt); })
+      .catch(function () {});
+    return function () { alive = false; };
+  }, []);
+
   // Flip the switch and persist it server-side.
   // Persist the enabled flag to the server.
   function applyAutoFeed(next) {
@@ -595,7 +621,7 @@ export default function Home() {
     fetch("/api/published", { cache: "no-store" })
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (d && Array.isArray(d.articles)) setLiveData(d);
+        if (d && Array.isArray(d.articles)) { setLiveData(d); if (d.publishedAt) setSiteVersion(d.publishedAt); }
         else { setLiveData(null); setLiveErr(d && d.error ? d.error : "No published edition yet"); }
       })
       .catch(function (e) { setLiveErr(e.message); })
@@ -944,7 +970,7 @@ export default function Home() {
   }
 
   async function handlePublish() {
-    if (orderedSelection.length === 0 || publishing) return;
+    if (orderedSelection.length === 0 || publishing || cooldown > 0) return;
     setPublishing(true);
     setPubResult(null);
     var results = { clipboard: false, website: false, error: null };
@@ -973,15 +999,27 @@ export default function Home() {
         var res = await fetch("/api/publish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ articles: orderedSelection, features: featureLinks, edition: "daily", title: title }),
+          body: JSON.stringify({ articles: orderedSelection, features: featureLinks, edition: "daily", title: title, basedOn: siteVersion }),
         });
         if (!res.ok) {
           var errText = "";
           try { var ej = await res.json(); errText = ej && ej.error ? ej.error : ""; } catch (e2) {}
           throw new Error(errText ? (errText) : ("HTTP " + res.status));
         }
+        var okJson = null;
+        try { okJson = await res.json(); } catch (e2) {}
+        if (okJson && okJson.publishedAt) setSiteVersion(okJson.publishedAt);
         results.website = true;
-      } catch (e) { results.error = "Site publish failed: " + e.message; }
+        setCooldown(45); // let storage settle before another publish is allowed
+      } catch (e) {
+        results.error = e.message;
+        // We may have been refused because the site moved on. Re-sync to the
+        // live version so the next publish is clean.
+        try {
+          var rj = await (await fetch("/api/published", { cache: "no-store" })).json();
+          if (rj && rj.publishedAt) setSiteVersion(rj.publishedAt);
+        } catch (e3) {}
+      }
       setPubResult(results);
       // On a successful site publish: remove the published articles from the
       // fetch list immediately — by link AND by story key, so the same story
@@ -1305,22 +1343,29 @@ export default function Home() {
             />
             {orderedSelection.length > 0 && (
               <div style={{ padding: "14px 14px 18px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <button onClick={handlePublish} disabled={publishing} style={{
+                <button onClick={handlePublish} disabled={publishing || cooldown > 0} title={cooldown > 0 ? "Storage is settling after your last publish \u2014 publishing again too soon is what made heroes revert." : ""} style={{
                   width: "100%", padding: "12px 14px", borderRadius: 10, border: "none",
-                  background: publishing ? "#374151" : (pubResult && !pubResult.error && pubResult.website ? "#15803d" : "linear-gradient(135deg, #15803d, #059669)"),
-                  color: "#fff", fontWeight: 800, fontSize: 14, cursor: publishing ? "default" : "pointer",
-                  boxShadow: publishing ? "none" : "0 4px 14px rgba(21,128,61,0.35)",
+                  background: (publishing || cooldown > 0) ? "#374151" : (pubResult && !pubResult.error && pubResult.website ? "#15803d" : "linear-gradient(135deg, #15803d, #059669)"),
+                  color: (publishing || cooldown > 0) ? "#9ca3af" : "#fff", fontWeight: 800, fontSize: 14, cursor: (publishing || cooldown > 0) ? "default" : "pointer",
+                  boxShadow: (publishing || cooldown > 0) ? "none" : "0 4px 14px rgba(21,128,61,0.35)",
                   display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
                 }}>
                   {publishing && <div style={{ width: 14, height: 14, border: "2px solid #fff", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />}
                   {publishing
                     ? "Publishing\u2026"
+                    : cooldown > 0
+                    ? ("\u23F3 Ready in " + cooldown + "s\u2026")
                     : (filledHeroCount() > 0
                         ? "\uD83D\uDE80 Publish \u2014 " + filledHeroCount()
                             + (filledHeroCount() === 1 ? " hero + " : " heroes + ")
                             + blocks.length + " " + (blocks.length === 1 ? "story" : "stories")
                         : "\uD83D\uDE80 Publish " + blocks.length + " " + (blocks.length === 1 ? "story" : "stories"))}
                 </button>
+                {cooldown > 0 && (
+                  <div style={{ marginTop: 6, fontSize: 10, color: "#d4a017", textAlign: "center", lineHeight: 1.4 }}>
+                    {"Letting the site finish saving. Publishing again too soon can revert the heroes."}
+                  </div>
+                )}
                 <button onClick={function () { downloadAweberHTML(); }} style={{
                   width: "100%", marginTop: 8, padding: "10px 14px", borderRadius: 10,
                   border: "1px solid rgba(184,134,11,0.4)",
