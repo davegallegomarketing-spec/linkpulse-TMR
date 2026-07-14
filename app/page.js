@@ -1331,6 +1331,20 @@ export default function Home() {
         {/* RIGHT: Selection Panel */}
         {!loading && (
           <div style={{ width: 280, flexShrink: 0, borderLeft: "1px solid rgba(255,255,255,0.06)", background: "rgba(0,0,0,0.2)", minHeight: "calc(100vh - 120px)", position: "sticky", top: 0, overflowY: "auto", maxHeight: "calc(100vh - 120px)" }}>
+            {cooldown > 0 && (
+              <div style={{ margin: "12px 12px 0", padding: "12px 14px", background: "rgba(212,160,23,0.10)", border: "1px solid rgba(212,160,23,0.45)", borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>{"\u23F3"}</span>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#d4a017" }}>{"Ready in " + cooldown + "s"}</div>
+                </div>
+                <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 3, overflow: "hidden", margin: "8px 0 7px" }}>
+                  <div style={{ height: "100%", width: (((45 - cooldown) / 45) * 100) + "%", background: "#d4a017", transition: "width 1s linear" }} />
+                </div>
+                <div style={{ fontSize: 10, color: "#9ca3af", lineHeight: 1.45 }}>
+                  {"Published \u2713 \u2014 the site is finishing saving. Publishing again before this clears can revert the featured stories."}
+                </div>
+              </div>
+            )}
             <SelectionPanel
               heroes={heroes}
               blocks={blocks}
