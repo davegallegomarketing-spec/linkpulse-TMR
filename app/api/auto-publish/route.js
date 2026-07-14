@@ -75,11 +75,14 @@ async function run(request) {
     //    keep the current edition title so the auto-publish doesn't rename it.
     var publishedLinks = {}, publishedStories = {};
     var currentTitle = "";
+    var siteVersion = null; // publishedAt we saw — sent as basedOn so the publish
+                            // route can detect a stale read and never revert heroes.
     try {
       var pubRes = await fetch(origin + "/api/published", { cache: "no-store" });
       if (pubRes.ok) {
         var pub = await pubRes.json();
         currentTitle = (pub && pub.title) || "";
+        siteVersion = (pub && pub.publishedAt) || null;
         var pubArts = (pub && pub.articles) || [];
         pubArts.forEach(function (a) {
           if (a.link) publishedLinks[a.link] = true;
@@ -132,17 +135,42 @@ async function run(request) {
     }
 
     // 7. Publish as BLOCK stories — heroes left as-is (features: [null, null]).
+    //    basedOn tells the publish route which version we read, so it can detect
+    //    a stale copy and never re-pin old heroes over an operator's new ones.
     var pubBody = {
       articles: picks,
       features: [null, null],
       edition: "daily",
       title: currentTitle || "The Mulligan Report",
+      basedOn: siteVersion,
     };
     var publishRes = await fetch(origin + "/api/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(pubBody),
     });
+
+    // 409 = the site moved under us (an operator published while we were working).
+    // Re-read the current version and try once more; if it's still moving, skip
+    // this run rather than risk clobbering. The next run is only 4 hours away.
+    if (publishRes.status === 409) {
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      var reRes = await fetch(origin + "/api/published", { cache: "no-store" });
+      if (reRes.ok) {
+        var rePub = await reRes.json();
+        pubBody.basedOn = (rePub && rePub.publishedAt) || null;
+        pubBody.title = (rePub && rePub.title) || pubBody.title;
+      }
+      publishRes = await fetch(origin + "/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pubBody),
+      });
+      if (publishRes.status === 409) {
+        return json({ published: 0, skipped: true, reason: "Site was being published to — skipped this run to avoid a conflict" }, 200);
+      }
+    }
+
     if (!publishRes.ok) {
       var t = "";
       try { t = await publishRes.text(); } catch (e) {}
