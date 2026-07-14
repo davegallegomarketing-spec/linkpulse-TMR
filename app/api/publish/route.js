@@ -2,6 +2,10 @@
 // RULE: Never overwrite without backing up first. Articles only grow.
 import { put, list } from "@vercel/blob";
 
+// The version guard below may wait a few seconds re-reading storage, so give the
+// function room to finish rather than being killed mid-publish.
+export const maxDuration = 30;
+
 async function getExistingData(filename) {
   try {
     var folderPrefix = filename.substring(0, filename.lastIndexOf("/") + 1);
@@ -43,6 +47,11 @@ export async function POST(request) {
     // new-on-top behavior, so nothing else breaks.
     var hasFeatures = Array.isArray(body.features);
     var features = hasFeatures ? body.features : [];
+    // The version of the site this publish was built on — the `publishedAt` the
+    // caller last saw. Used below to guarantee we never decide the heroes from a
+    // stale copy of latest.json (Vercel Blob takes up to ~60s to propagate an
+    // overwrite), and never silently overwrite someone else's newer publish.
+    var basedOn = body.basedOn || null;
 
     if (!articles || !Array.isArray(articles) || articles.length === 0) {
       return new Response(JSON.stringify({ error: "No articles provided" }), {
@@ -56,6 +65,41 @@ export async function POST(request) {
 
     // ALWAYS read from latest.json — single source of truth
     var existing = await getExistingData("editions/latest.json");
+
+    // ═══ VERSION GUARD (prevents the "heroes revert" bug) ═══
+    // The heroes are decided from whatever sits at positions 1-2 of the file we
+    // read. If that read is STALE, we'd re-pin the OLD heroes and wipe the new
+    // ones. So: compare what we read against the version the caller was looking
+    // at.
+    //   read OLDER than caller's  → our read is stale → wait and re-read.
+    //   read NEWER than caller's  → somebody else published → refuse (don't clobber).
+    //   equal                     → safe to proceed.
+    // When unsure we WRITE NOTHING, so a publish can never silently destroy work.
+    if (basedOn) {
+      var tries = 0;
+      while (existing && existing.publishedAt && existing.publishedAt < basedOn && tries < 5) {
+        await new Promise(function (r) { setTimeout(r, 1200); });
+        existing = await getExistingData("editions/latest.json");
+        tries++;
+      }
+      var seenAt = existing && existing.publishedAt ? existing.publishedAt : null;
+      if (seenAt && seenAt < basedOn) {
+        console.error("[publish] BLOCKED — stale read:", seenAt, "< basedOn", basedOn);
+        return new Response(JSON.stringify({
+          error: "Storage is still catching up from the last publish. Nothing was changed \u2014 please wait a few seconds and publish again.",
+          code: "stale",
+        }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+      if (seenAt && seenAt > basedOn) {
+        console.error("[publish] BLOCKED — conflict: site is at", seenAt, "but publish was built on", basedOn);
+        return new Response(JSON.stringify({
+          error: "The site changed since you loaded it (someone else published). Nothing was changed \u2014 hit Refresh and re-apply your picks.",
+          code: "conflict",
+          siteVersion: seenAt,
+        }), { status: 409, headers: { "Content-Type": "application/json" } });
+      }
+    }
+
     var existingArticles = (existing && existing.articles) ? existing.articles : [];
 
     console.log("[publish] Existing articles in latest.json:", existingArticles.length);
